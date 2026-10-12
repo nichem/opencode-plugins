@@ -11,6 +11,7 @@
 | [opencode-providers](./opencode-providers/README.md) | Qoder CN 与 Krill Codex 接入、模型发现、账号切换 | `/connect`、`/models` | `opencode.json` |
 | [opencode-goal](./opencode-goal/README.md) | 设置目标、自动续跑、暂停恢复、完成状态提示 | `/goal` | `opencode.json` + `cli.json` |
 | [opencode-message-delete](./opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
+| [opencode-agents](./opencode-agents/README.md) | 从插件自带 Markdown 注册 agent；当前提供加载器，预设待发布 | agent 选择器 | `opencode.json` |
 
 ## 快速安装
 
