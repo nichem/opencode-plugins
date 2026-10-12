@@ -5,6 +5,7 @@
 | 插件 | 适用版本 | 功能 |
 | --- | --- | --- |
 | [opencode-providers](./opencode-providers/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 多供应商插件，目前包含 Qoder 中国区 |
+| [opencode-goal](./opencode-goal/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 从原版 0.4.3 迁移的目标管理、自动续跑及状态提示 |
 
 各插件分别管理依赖和安装配置。Qoder CN 的 PAT 通过 OpenCode 的 `/connect` 输入并保存。
 
@@ -25,3 +26,5 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 ```
 
 私有仓库需要本机 Git 已具备仓库访问权限。安装后通过 `/connect` 选择 Qoder CN 并输入 PAT。
+
+Goal 插件安装及 `cli.json` 的状态提示配置见 [opencode-goal](./opencode-goal/README.md)。
