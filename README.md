@@ -17,6 +17,28 @@
 
 通过公开的 GitHub 仓库安装，无需 GitHub 凭据，也无需克隆源码或本地编译。模型供应商的 PAT/API Key 仍需自行配置。
 
+### 交互式安装（推荐）
+
+需要 Node.js 24+、Git，以及已加入 PATH 的 OpenCode 2.x。在终端执行：
+
+```powershell
+npx github:nichem/opencode-plugins
+```
+
+安装器直接从 GitHub 获取，**不发布到 npm**；首次运行时 npm 可能提示确认下载运行。
+
+- **安装 / 更新**：空格多选、回车执行。未安装、有更新或配置不完整的插件可选；最新版仍显示，但不可选。默认不选任何项，直接回车返回。
+- **卸载**：多选已配置的插件，再确认卸载；确认默认选择否。仅移除配置，保留账号、凭据、缓存和插件数据。
+- **返回 / 退出**：子菜单按 `Esc` 返回，主菜单选择退出，或按 `Ctrl+C`。
+
+安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal 自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
+
+版本以仓库 `main` 的提交为单位判断，文档更新也可能显示新版本。安装时固定到本次检查的提交；后续更新请重新运行上面的命令。配置版本与 OpenCode 缓存用于状态判断，显示最新版不代表已验证插件运行正常。网络检查失败时不会标记为最新版。
+
+改动前备份到 `~/.local/state/opencode-plugins/backups/`（设置 `XDG_STATE_HOME` 时跟随该目录），完成后尝试 `opencode reload`。请重新打开 OpenCode 终端界面，由 OpenCode 下载并加载插件。
+
+### 手动配置
+
 配置目录默认是 `~/.config/opencode/`，Windows 对应 `%USERPROFILE%\.config\opencode\`。如果设置了 `XDG_CONFIG_HOME`，则使用该目录下的 `opencode/`。
 
 **将以下条目合并到已有的 `plugins` 数组中，保留其他配置。** 安装部分插件时，只保留对应条目即可。
@@ -107,7 +129,9 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ## 更新与迁移
 
-更新已安装的插件：
+通过交互式安装器安装的插件，重新执行 `npx github:nichem/opencode-plugins`，选择“安装 / 更新”。安装器使用固定提交地址，不能靠 `opencode plugin update` 自动跟随 `main`。
+
+手动配置为上述 `#main` 地址的插件可以执行：
 
 ```powershell
 opencode plugin update
