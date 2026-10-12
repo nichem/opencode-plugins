@@ -1,8 +1,9 @@
 import { Plugin } from "@opencode/plugin";
 import { setupQoder } from "./providers/qoder/index.js";
+import { setupKrill } from "./providers/krill/index.js";
 
 // Each provider owns its authentication, model discovery and transport.
-const providers = new Map([["qoder", setupQoder]]);
+const providers = new Map([["qoder", setupQoder], ["krill", setupKrill]]);
 
 export default Plugin.define({
     id: "opencode-providers",
@@ -16,7 +17,7 @@ export default Plugin.define({
         }
         for (const [name, setup] of providers) {
             const config = options[name] ?? {};
-            if (typeof config !== "object" || Array.isArray(config))
+            if (config === null || typeof config !== "object" || Array.isArray(config))
                 throw new Error(`opencode-providers: providers.${name} must be an object`);
             if (config.enabled === false) continue;
             await setup(ctx, config);

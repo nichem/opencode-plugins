@@ -4,7 +4,7 @@
 
 | 插件 | 适用版本 | 功能 |
 | --- | --- | --- |
-| [opencode-providers](./opencode-providers/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 多供应商插件，目前包含 Qoder 中国区 |
+| [opencode-providers](./opencode-providers/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 多供应商插件，包含 Qoder 中国区和 Krill Codex |
 | [opencode-goal](./opencode-goal/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 从原版 0.4.3 迁移的目标管理、自动续跑及状态提示 |
 | [opencode-message-delete](./opencode-message-delete/README.md) | OpenCode 2.x，已针对 2.0.27 验证 | 逐条删除末尾 AI 消息，保留项目文件；纯 TUI 插件 |
 

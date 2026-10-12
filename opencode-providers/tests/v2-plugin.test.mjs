@@ -12,7 +12,8 @@ function host(options = {}, key) {
     const records = [], hooks = [], integrations = new Map(), methods = [], defaults = [];
     const state = { key, resolves: 0 };
     const ctx = {
-        options,
+        options: { ...options, providers: typeof options.providers === "object" && !Array.isArray(options.providers)
+            ? { krill: { enabled: false }, ...options.providers } : options.providers ?? { krill: { enabled: false } } },
         integration: {
             async transform(fn) {
                 fn({

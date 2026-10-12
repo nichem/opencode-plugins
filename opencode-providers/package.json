@@ -2,17 +2,32 @@
   "name": "opencode-providers",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal provider integrations for OpenCode 2.x, starting with Qoder CN.",
+  "description": "Qoder CN and Krill Codex provider integrations for OpenCode 2.x.",
   "type": "module",
   "license": "MIT",
   "main": "./index.js",
-  "exports": { ".": "./index.js" },
-  "files": ["index.js", "src", "README.md", "NOTICE.md"],
-  "engines": { "node": ">=24" },
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "src",
+    "README.md",
+    "NOTICE.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.mjs"
   },
-  "dependencies": { "@opencode/plugin": "2.0.27" },
-  "devDependencies": { "@opencode/schema": "2.0.27", "effect": "4.0.1" }
+  "dependencies": {
+    "@ai-sdk/openai": "3.0.125",
+    "@opencode/plugin": "2.0.27"
+  },
+  "devDependencies": {
+    "@opencode/schema": "2.0.27",
+    "effect": "4.0.1"
+  }
 }
