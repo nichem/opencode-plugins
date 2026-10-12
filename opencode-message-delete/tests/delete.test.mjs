@@ -100,18 +100,19 @@ test("paginates idle markers and uses server ordering, not message ID sorting", 
 
 test("TUI registers slash command, ignores duplicate dispatch and refreshes the session", async () => {
   const { client, state } = fixture()
-  let command, release, syncs = 0
+  let command, layer, release, syncs = 0
   const notices = []
   state.onStage = () => new Promise(resolve => { release = resolve })
   const ctx = { client,
-    keymap: { layer: factory => { command = factory().commands[0] } },
+    keymap: { layer: factory => { layer = factory(); command = layer.commands[0] } },
     ui: { router: { current: () => ({ type: "session", sessionID: "s" }) }, toast: { show: notice => notices.push(notice) } },
     data: { session: { status: () => "idle", invalidate() {}, async sync() { syncs++ },
       message: { invalidate() {}, async sync() { syncs++ } } } },
   }
   plugin.setup(ctx)
   assert.equal(command.slash.name, "delete-last-message")
-  assert.equal(command.enabled(), true)
+  assert.equal(layer.mode, "global", "Slash and palette discovery run outside base input mode")
+  assert.equal(command.enabled, undefined, "Keep the command discoverable; validate on execution")
   const first = command.run()
   await new Promise(resolve => setImmediate(resolve))
   await command.run()
@@ -122,5 +123,11 @@ test("TUI registers slash command, ignores duplicate dispatch and refreshes the 
   assert.equal(syncs, 2)
   assert.equal(notices[0].variant, "success")
   ctx.data.session.status = () => "running"
-  assert.equal(command.enabled(), false)
+  state.active = { s: { type: "running" } }
+  await command.run()
+  assert.equal(state.commits, 1)
+  assert.match(notices.at(-1).message, /会话正在运行/)
+  ctx.ui.router.current = () => ({ type: "home" })
+  await command.run()
+  assert.match(notices.at(-1).message, /请先打开/)
 })
