@@ -1,6 +1,6 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、管理持续执行的目标，以及逐条删除末尾 AI 消息。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标，以及逐条删除末尾 AI 消息。
 
 目前针对 **OpenCode 2.0.27** 验证。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
 
@@ -15,7 +15,7 @@
 
 ## 快速安装
 
-通过 GitHub 仓库安装，无需发布 npm 包，也无需克隆源码或本地编译。私有仓库需要本机 Git 已具备访问权限。
+通过公开的 GitHub 仓库安装，无需 GitHub 凭据，也无需克隆源码或本地编译。模型供应商的 PAT/API Key 仍需自行配置。
 
 配置目录默认是 `~/.config/opencode/`，Windows 对应 `%USERPROFILE%\.config\opencode\`。如果设置了 `XDG_CONFIG_HOME`，则使用该目录下的 `opencode/`。
 
@@ -23,13 +23,14 @@
 
 ### 服务端：`opencode.json`
 
-负责供应商接入和目标执行；使用 `opencode.jsonc` 也可以，无需同时维护两份。
+负责供应商接入、预设 agent 和目标执行；使用 `opencode.jsonc` 也可以，无需同时维护两份。
 
 ```json
 {
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents"
   ]
 }
 ```
@@ -68,6 +69,18 @@ Goal 在两个文件中使用同一地址，分别加载服务端和界面入口
 凭据由 OpenCode 保存，插件读取当前激活账号。支持保存多个账号并手动切换；不做自动轮换或额度耗尽切号。首次连接或切换账号后，执行 `opencode reload` 刷新模型列表。
 
 Krill 的模型列表只提供 ID，长度与能力参数使用插件默认值，也可在插件选项中覆盖。其他模型系列不自动加入 Codex 通道。具体参数见 [供应商配置说明](./opencode-providers/README.md)。
+
+### 使用预设 agent
+
+也可以单独通过命令安装：
+
+```powershell
+opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents'
+```
+
+插件从随包分发的 `agents/` Markdown 文档注册 agent，无需复制到本机 agent 目录。注册名称统一带 `bundled-` 前缀，可在 agent 选择器中选择；具体可见性取决于文档中的 `mode` 和 `hidden` 设置。
+
+只需配置服务端入口，不需要添加到 `cli.json`。文档格式和更新方法见 [Agent 插件说明](./opencode-agents/README.md)。
 
 ### 持续执行目标
 

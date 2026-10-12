@@ -6,7 +6,13 @@ OpenCode 2.x 服务端插件。读取插件自带 `agents/` 目录中的 Markdow
 
 ## 安装
 
-在 `opencode.json` 的 `plugins` 中添加（不是 `cli.json`）：
+通过公开仓库安装，无需 GitHub 凭据：
+
+```powershell
+opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents'
+```
+
+也可在 `opencode.json` 的 `plugins` 中添加（不是 `cli.json`）：
 
 ```json
 {
@@ -15,6 +21,8 @@ OpenCode 2.x 服务端插件。读取插件自带 `agents/` 目录中的 Markdow
 ```
 
 安装后自带的 Markdown 会被注册；空目录不会添加 agent。仅扫描插件自身目录，不读取 `~/.config/opencode/agents` 或项目的 agent 文档。重新加载插件后更新；不会监控文件或自动发起模型请求。
+
+执行 `opencode reload` 后重新打开终端界面，在 agent 选择器中查找 `bundled-` 前缀的预设。`subagent` 或 `hidden` 预设的显示方式由 OpenCode 决定。
 
 ## 文档格式
 
