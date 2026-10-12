@@ -13,14 +13,14 @@
 OpenCode 2.x：
 
 ```powershell
-opencode plugin add 'github:nichem/opencode-plugins#main::path:opencode-providers'
+opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers'
 ```
 
 也可在 `opencode.jsonc` 中添加：
 
 ```json
 {
-  "plugins": ["github:nichem/opencode-plugins#main::path:opencode-providers"]
+  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers"]
 }
 ```
 
