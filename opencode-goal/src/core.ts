@@ -82,7 +82,7 @@ export const formatGoalSummary = (goal: GoalState, now = Date.now()) =>
     "Goal",
     `Status: ${goal.status}`,
     `Objective: ${goal.objective}`,
-    `Time used: ${formatElapsed(goal.timeUsedSeconds + (goal.status === "active" && goal.activeStartedAt ? Math.floor((now - goal.activeStartedAt) / 1000) : 0))}`,
+    `Time used: ${formatElapsed(accounted(goal, now).timeUsedSeconds)}`,
     "",
     commandHints(goal.status),
   ].join("\n")
@@ -94,6 +94,6 @@ export const renderContinuationPrompt = ({ objective, timeUsedSeconds, mode = "n
 
 export function accounted(goal: GoalState, now = Date.now()): GoalState {
   if (goal.status !== "active" || goal.activeStartedAt === null) return { ...goal }
-  const elapsed = Math.max(0, Math.floor((now - goal.activeStartedAt) / 1000))
+  const elapsed = Math.max(0, (now - goal.activeStartedAt) / 1000)
   return { ...goal, activeStartedAt: now, timeUsedSeconds: goal.timeUsedSeconds + elapsed, updatedAt: now }
 }

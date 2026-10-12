@@ -27,6 +27,10 @@ export class GoalController {
   private legacy = new Map<string, GoalState>()
   private queues = new Map<string, Promise<unknown>>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
+  private waiting = new Map<string, AbortController>()
+  private waits = new Set<Promise<void>>()
+  private intents = new Map<string, object>()
+  private pendingTerminals = new Map<string, Set<string>>()
   private continuing = new Set<string>()
   private usedTools = new Set<string>()
   private stagnant = new Map<string, number>()
@@ -76,15 +80,28 @@ export class GoalController {
     await this.notify?.(id, text)
   }
 
-  private cancel(id: string) {
+  private cancelPending(id: string) {
     const timer = this.timers.get(id)
     if (timer) clearTimeout(timer)
     this.timers.delete(id)
+    this.waiting.get(id)?.abort()
+    this.waiting.delete(id)
+  }
+
+  private cancel(id: string) {
+    this.cancelPending(id)
     this.continuing.delete(id)
     this.stagnant.delete(id)
   }
 
-  private async mutate(id: string, operation: Operation): Promise<string> {
+  private invalidate(id: string) {
+    const intent = {}
+    this.intents.set(id, intent)
+    this.cancelPending(id)
+    return intent
+  }
+
+  private async mutate(id: string, operation: Operation, intent?: object): Promise<string> {
     const record = await this.load(id)
     const goal = record.goal
     const now = Date.now()
@@ -109,7 +126,13 @@ export class GoalController {
         break
       case "resume":
         if (!goal) return "No goal to resume"
-        if (goal.status === "active") return "Goal is active"
+        if (goal.status === "active") {
+          // An unsuccessful pause/clear can leave durable state active after
+          // cancelling local admission. Explicit resume repairs that state,
+          // but must not queue another turn behind an accepted continuation.
+          if (!this.continuing.has(id) && (!intent || this.intents.get(id) === intent)) this.schedule(id)
+          return `Goal is active\n\n${formatGoalSummary(goal)}`
+        }
         next = activate(goal)
         message = "Goal active"
         break
@@ -131,25 +154,49 @@ export class GoalController {
     }
     await this.save(id, { ...record, goal: next })
     this.cancel(id)
-    if (next?.status === "active") this.schedule(id)
+    if (next?.status === "active" && (!intent || this.intents.get(id) === intent)) this.schedule(id)
     return next ? `${message}\n\n${formatGoalSummary(next)}` : `${message}\n${NO_GOAL}`
   }
 
   private schedule(id: string) {
-    if (this.disposed || this.timers.has(id)) return
+    if (this.disposed || this.timers.has(id) || this.waiting.has(id)) return
     // Let the terminal execution transition release its scheduler before admitting another turn.
     const timer = setTimeout(() => {
       this.timers.delete(id)
-      void this.serial(id, () => this.continue(id)).catch(error => this.fail(id, error))
+      this.waitForIdle(id)
     }, 50)
     timer.unref()
     this.timers.set(id, timer)
   }
 
-  private async fail(id: string, error: unknown) {
+  private waitForIdle(id: string) {
+    const controller = new AbortController()
+    this.waiting.set(id, controller)
+    const signal = AbortSignal.any([controller.signal, this.abort.signal])
+    // Never hold the session's serial queue while waiting: pause/clear, tools
+    // and terminal events must remain able to run and cancel this admission.
+    const pending = (async () => {
+      try {
+        await this.ctx.session.wait({ sessionID: id }, { signal })
+        await this.serial(id, async () => {
+          if (signal.aborted || this.waiting.get(id) !== controller) return
+          await this.continue(id, signal)
+        })
+      } catch (error) {
+        if (!signal.aborted) await this.fail(id, error, signal)
+      } finally {
+        if (this.waiting.get(id) === controller) this.waiting.delete(id)
+      }
+    })()
+    this.waits.add(pending)
+    void pending.finally(() => this.waits.delete(pending))
+  }
+
+  private async fail(id: string, error: unknown, signal: AbortSignal) {
     console.error("opencode-goal: continuation stopped", error)
     if (this.disposed) return
     await this.serial(id, async () => {
+      if (signal.aborted || this.disposed) return
       this.cancel(id)
       const record = await this.load(id)
       if (record.goal?.status === "active") {
@@ -159,33 +206,50 @@ export class GoalController {
     }).catch(error => console.error("opencode-goal: failed to save pause", error))
   }
 
-  private async continue(id: string) {
-    if (this.disposed) return
+  private async continue(id: string, signal: AbortSignal) {
+    if (signal.aborted) return
     const record = await this.load(id)
-    if (record.goal?.status !== "active") return
+    if (signal.aborted || record.goal?.status !== "active") return
     const session = await this.owned(id)
-    if (!session || this.disposed) return
+    if (signal.aborted || !session || session.revert) return
     // V2 keeps current model (including variant) and agent on the session itself.
     if (session.agent?.toLowerCase() === "plan" || session.model?.variant?.toLowerCase().includes("plan")) return
     const goal = accounted(record.goal)
     await this.save(id, { ...record, goal })
-    if (this.disposed) return
-    this.continuing.add(id)
+    if (signal.aborted) return
     this.usedTools.delete(id)
     await this.ctx.session.synthetic({ sessionID: id, resume: true, delivery: "queue",
       text: renderContinuationPrompt({ objective: goal.objective, timeUsedSeconds: goal.timeUsedSeconds,
         mode: (this.stagnant.get(id) ?? 0) >= 2 ? "recovery" : "normal" }),
       description: "Continue working toward the active goal",
-      metadata: { goal: "continuation" } }, { signal: this.abort.signal })
+      metadata: { goal: "continuation" } }, { signal })
+    // Only acknowledged admissions count as running. An aborted submission
+    // must not leave a stale marker that prevents explicit resume.
+    this.continuing.add(id)
   }
 
   async command(id: string, text: string) {
+    const operation = parseGoalCommand(text)
+    // Invalidate before waiting for persistence or an in-flight admission.
+    // A status query, invalid append, or resume must not stop the goal.
+    const intent = operation.kind === "pause" || operation.kind === "clear" ||
+      ((operation.kind === "set" || operation.kind === "append") && operation.objective.trim())
+      ? this.invalidate(id) : operation.kind === "resume" ? {} : undefined
+    if (operation.kind === "resume") this.intents.set(id, intent!)
     return this.serial(id, async () => {
-      if (!await this.owned(id)) throw new Error("Goal session belongs to another location")
-      const operation = parseGoalCommand(text)
-      const goal = (await this.load(id)).goal
-      const message = operation.kind === "show" ? goal ? formatGoalSummary(goal) : NO_GOAL : await this.mutate(id, operation)
-      await this.notice(id, message)
+      try {
+        if (!await this.owned(id)) throw new Error("Goal session belongs to another location")
+        const goal = (await this.load(id)).goal
+        const message = operation.kind === "show" ? goal ? formatGoalSummary(goal) : NO_GOAL : await this.mutate(id, operation, intent)
+        await this.notice(id, message)
+      } catch (error) {
+        // A failed edit must not strand the previous active goal. A newer
+        // pause, edit or user input owns scheduling and must win over recovery.
+        if (intent && this.intents.get(id) === intent &&
+          (operation.kind === "set" || operation.kind === "append") &&
+          this.records.get(id)?.goal?.status === "active") this.schedule(id)
+        throw error
+      }
     })
   }
 
@@ -197,6 +261,16 @@ export class GoalController {
     const relevant = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted",
       "session.tool.called", "session.deleted", "session.inbox.enqueued"]
     if (!relevant.includes(event.type)) return
+    const terminalID = event.type.startsWith("session.execution.") ? event.id : undefined
+    if (terminalID) {
+      if (this.records.get(id)?.terminal === terminalID || this.pendingTerminals.get(id)?.has(terminalID)) return
+      const pending = this.pendingTerminals.get(id) ?? new Set<string>()
+      pending.add(terminalID)
+      this.pendingTerminals.set(id, pending)
+    }
+    if (event.type === "session.deleted" || event.type === "session.execution.failed" ||
+      event.type === "session.execution.interrupted" ||
+      (event.type === "session.inbox.enqueued" && event.data.item?.type === "user")) this.invalidate(id)
     return this.serial(id, async () => {
       if (event.type === "session.deleted") {
         this.cancel(id)
@@ -228,6 +302,11 @@ export class GoalController {
       this.usedTools.delete(id)
       await this.save(id, { ...record, ...terminal, goal: accounted(record.goal) })
       this.schedule(id)
+    }).finally(() => {
+      if (!terminalID) return
+      const pending = this.pendingTerminals.get(id)
+      pending?.delete(terminalID)
+      if (!pending?.size) this.pendingTerminals.delete(id)
     })
   }
 
@@ -257,10 +336,13 @@ export class GoalController {
       if (![...this.records.values()].some(r => r.goal?.status === "active")) return
       editor.add({ name: "update_goal", description: "Mark the active /goal complete only after verifying every requirement.",
         input: Schema.Struct({ status: Schema.Literal("complete") }), options: { codemode: false },
-        execute: async (_input, context) => ({ content: await this.serial(context.sessionID, async () => {
-          if (!await this.owned(context.sessionID)) return "No active goal to complete"
-          return this.mutate(context.sessionID, { kind: "complete" })
-        }) }) })
+        execute: async (_input, context) => {
+          this.invalidate(context.sessionID)
+          return { content: await this.serial(context.sessionID, async () => {
+            if (!await this.owned(context.sessionID)) return "No active goal to complete"
+            return this.mutate(context.sessionID, { kind: "complete" })
+          }) }
+        } })
     })
     await this.ctx.session.hook("context", async input => {
       await this.serial(input.sessionID, async () => {
@@ -270,7 +352,9 @@ export class GoalController {
     this.listener = (async () => {
       try {
         for await (const event of this.ctx.event.subscribe({ signal: this.abort.signal })) {
-          try { await this.event(event) } catch (error) { console.error("opencode-goal: event failed", error) }
+          // event() invalidates admission synchronously, then serializes state
+          // changes itself. Do not block delivery of newer cancellation events.
+          void this.event(event).catch(error => console.error("opencode-goal: event failed", error))
         }
       } catch (error) { if (!this.disposed) console.error("opencode-goal: event stream failed", error) }
     })()
@@ -280,6 +364,7 @@ export class GoalController {
     this.disposed = true
     for (const id of this.timers.keys()) this.cancel(id)
     this.abort.abort()
+    await Promise.allSettled([...this.waits])
     await this.listener
     await Promise.allSettled([...this.queues.values()])
     for (const [id, record] of this.records) {
