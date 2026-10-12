@@ -1,0 +1,10 @@
+node_modules/
+token.txt
+.env
+.env.*
+*.log
+*.bak
+*.bak.*
+*.tgz
+coverage/
+opencode-qoder-cn-last-request.json

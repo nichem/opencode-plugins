@@ -1,0 +1,9 @@
+/message-editor/
+node_modules/
+.env
+.env.*
+token.txt
+*.log
+*.bak
+*.bak.*
+*.tgz
