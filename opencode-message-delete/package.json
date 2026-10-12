@@ -1,0 +1,20 @@
+{
+  "name": "opencode-message-delete",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Delete the last assistant message in OpenCode 2.x without reverting files",
+  "type": "module",
+  "license": "MIT",
+  "exports": { "./tui": "./tui.ts" },
+  "files": ["tui.ts", "src", "README.md", "LICENSE"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.0.27",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}
