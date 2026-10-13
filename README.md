@@ -87,13 +87,15 @@ Goal 在两个文件中使用同一地址，分别加载服务端和界面入口
 | --- | --- | --- |
 | Qoder CN | 中国区 `pt-` 开头的 PAT | 内置 Auto、Qwen3.8-Max，并尝试发现账号可用模型 |
 | Krill | API Key | `/codex/v1` 的 OpenAI Responses 通道，内置两个 GPT 模型并发现更多 GPT 文本模型 |
-| Cursor | 浏览器登录或 Cursor API Key | 内置 Auto，发现账号模型及思考变体；使用独立的 Cursor 协议适配层 |
+| Cursor | 浏览器登录或 Cursor API Key | 仅显示 Cursor Models 额度池内的已知模型及账号可用变体，隐藏 Auto 和 Other Models |
 
 凭据由 OpenCode 保存，插件读取当前激活账号。支持保存多个账号并手动切换；不做自动轮换或额度耗尽切号。首次连接或切换账号后，执行 `opencode reload` 刷新模型列表。
 
 Krill 的模型列表只提供 ID，长度与能力参数使用插件默认值，也可在插件选项中覆盖。其他模型系列不自动加入 Codex 通道。具体参数见 [供应商配置说明](./opencode-providers/README.md)。
 
 Cursor 只使用 OpenCode 保存的连接，不读取 `CURSOR_API_KEY`。首次连接后执行 `opencode reload` 刷新模型。接入不修改全局 MCP、shell、权限或 agent 切换行为；上游依赖额外工具及全局钩子的功能不随包启用，详见 [Cursor 支持范围](./opencode-providers/README.md#cursor-认证和支持范围)。
+
+Cursor 模型列表按[官方额度池划分](https://cursor.com/docs/models-and-pricing)过滤，目前仅保留账号返回的 Composer 2.5、Grok 4.5 / 4.6 / 4.7 及对应变体。未连接、模型发现失败或关闭发现时列表为空，不再使用 Auto 兜底；未确认额度池的新模型也暂不显示。
 
 Cursor 文件读取经过宿主工具，不绕过权限补读全文；切换账号后拒绝向旧连接续传工具结果。模型结束一轮后，协议层不会因为回复只是进度描述而自行追加请求。
 
@@ -106,6 +108,8 @@ Cursor 文件读取经过宿主工具，不绕过权限补读全文；切换账�
 Cursor 遵守 `toolChoice` 的禁用、指定工具和必须调用工具要求；原生提问与事件转换也检查本轮允许列表。取消生成会打断响应等待；工具续接准备期间取消也会关闭连接，停止回传工具结果。正常工具交接后的取消不会关闭下一轮续接连接。
 
 首次请求和重试请求的准备阶段也支持取消；准备失败会清理连接，取消后不再发送初始请求。删除消息使 AI 历史全部清空时，Cursor 会丢弃旧会话缓存，按照 OpenCode 剩余历史重新建立上下文。
+
+Windows 下，Cursor 后台收集 Git 状态和读取设备标识时会隐藏子进程窗口，避免聊天期间终端窗口闪现。
 
 ### 使用预设 agent
 

@@ -77,9 +77,13 @@ Qwen3.8-Max 提供 `low`、`medium`、`xhigh`、`none` 思考强度，在线模�
 
 在 `/connect` 选择 **Cursor**，使用浏览器登录或输入 Cursor API Key。凭据由 OpenCode 保存和刷新；不读取 `CURSOR_API_KEY`、旧 `auth.json`、插件配置中的 Key 或 token 文件。浏览器登录最多等待三分钟；API Key 按需换取临时访问令牌。
 
-首次连接、切换账号或更新模型列表后执行 `opencode reload`。默认显示 `cursor/default`（Auto）；模型发现成功后使用账号返回的目录，并映射思考档位、长上下文等变体。失败时仅保留 Auto，不沿用其他账号的模型缓存。上游模型限制和价格为参考元数据，以 Cursor 账号的实际能力和计费为准。
+首次连接、切换账号或更新模型列表后执行 `opencode reload`。模型列表只显示账号返回、且属于已确认 **Cursor Models** 额度池的模型：Composer 2.5、Grok 4.5 / 4.6 / 4.7，保留账号提供的 Fast、思考档位、长上下文等变体。Auto 和 **Other Models**（如 Claude、GPT、Gemini）不显示。
+
+额度池按 [Cursor 官方说明](https://cursor.com/docs/models-and-pricing)核实（2026-10-13）；当前发现接口没有额度池字段，因此使用明确的模型 ID 白名单，不按显示名称或系列前缀猜测。未确认的新型号暂不显示，后续确认后更新白名单。未连接、发现失败、没有匹配模型或设置 `discoverModels: false` 时，Cursor 列表为空；登录入口仍保留，不添加 Auto 兜底或沿用其他账号的目录。过滤仅作用于本插件提供的模型列表；上游模型限制和价格为参考元数据，实际能力和计费以 Cursor 为准。
 
 Cursor 配置只接受 `enabled`、`discoverModels` 两个布尔选项，供应商 ID 固定为 `cursor`。请求时重新读取当前账号，按连接隔离会话缓存；生成过程中切换账号时，应中断并重新发起请求。
+
+Windows 后台 Git 状态查询和设备标识读取统一使用 `windowsHide: true`，避免终端窗口闪现；模型发现与聊天请求共用修补后的传输模块。查询内容及超时保持不变，OpenCode 自己的 shell 工具由宿主管理。
 
 协议保留与宿主计划模式对应的传输状态，但不注入额外模式或计划提交提醒。从 `plan` 切到只读、自定义或 `build` agent 时，行为约束均由 OpenCode 当前 agent 的指令决定，不自动宣告允许编辑。
 
@@ -103,7 +107,7 @@ Cursor 配置只接受 `enabled`、`discoverModels` 两个布尔选项，供应�
 - 不注册上游的计划暂存、图片保存等专有工具。因此不承诺上游 CreatePlan 自动执行、GenerateImage 保存等扩展功能；需要计划模式时使用 OpenCode 自己的 agent 切换。
 - 协议内部也拒绝原生 CreatePlan、SwitchMode、GenerateImage 审批请求，避免绕过宿主直接写计划文件；原生 GitDiff 执行被禁用，模型应调用 OpenCode 的 shell 工具。
 
-MCP Code Mode 经 `execute` 的实际调用效果、Cursor 特有交互及完整多轮工具兼容性仍需真实账号验证。已完成模拟网络单元测试，以及隔离 OpenCode 2.0.27 的实际加载、登录方式注册和缺少凭据请求验证；未使用真实 Cursor 账号进行生成。
+MCP Code Mode 经 `execute` 的实际调用效果、Cursor 特有交互及完整多轮工具兼容性仍需真实账号验证。已完成模拟网络单元测试，以及隔离 OpenCode 2.0.27 的实际加载、登录方式注册和无 Auto 兜底验证；未使用真实 Cursor 账号进行生成。
 
 ## 源码结构
 
@@ -120,7 +124,7 @@ src/providers/krill/index.js     /connect 注册、Responses SDK 和实时凭据
 src/providers/krill/models.js    内置模型、模型发现和参数覆盖
 src/providers/cursor/index.js   仅限 Cursor 的模型与会话适配
 src/providers/cursor/auth.js    OpenCode 连接、OAuth 登录及令牌更新
-src/providers/cursor/models.js  上游模型到原生 2.x 模型的转换
+src/providers/cursor/models.js  Cursor Models 额度池过滤、原生 2.x 模型转换
 src/providers/cursor/upstream.js 固定版本协议模块入口（不启用上游插件）
 ```
 

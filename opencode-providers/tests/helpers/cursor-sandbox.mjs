@@ -8,6 +8,8 @@ export async function cursorSandbox(t, io = {}) {
     const module = new vm.SourceTextModule(source + `
 export const fixtureTransport = bidiRunStream;
 export const fixtureLifetime = createCallLifetime;
+export const fixtureCollectGit = collectGit;
+export const fixtureWindowsMachineGuid = readWindowsMachineGuid;
 export function fixtureIO(io) {
     loadMergedConfig = async () => ({});
     hydrateConversationState = async () => undefined;
@@ -37,7 +39,7 @@ export function fixtureSeed(key, parts, restored = false) {
 export function fixtureRestore(key, raw) { restoreTurnProvenance(key, parseTurnProvenance(raw)); }
 `, { identifier: "cursor-protocol-fixture" });
     await module.link(async name => {
-        const namespace = await import(name);
+        const namespace = io.modules?.[name] ?? await import(name);
         return new vm.SyntheticModule(Object.keys(namespace), function () {
             for (const key of Object.keys(namespace)) this.setExport(key, namespace[key]);
         });

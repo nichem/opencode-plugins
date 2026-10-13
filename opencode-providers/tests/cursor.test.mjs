@@ -181,7 +181,7 @@ function harness() {
         },
     };
     const protocol = { ...upstream,
-        async fetchModels() { state.discoveries++; return [{ id: "fixture-model", displayName: "Fixture", supportsAgent: true, supportsImages: true, maxContext: 123000, variants: [] }]; },
+        async fetchModels() { state.discoveries++; return [{ id: "composer-2.5", displayName: "Fixture", supportsAgent: true, supportsImages: true, maxContext: 123000, variants: [] }]; },
         createSdk(options) { return { languageModel(modelID) {
             const run = async input => {
                 const token = await options.getAccessToken();
@@ -202,7 +202,7 @@ test("Cursor uses only scoped hooks, native schemas, and stored key/OAuth method
     const h = harness();
     await setupCursor(h.ctx, {}, h.protocol);
     assert.deepEqual(h.state.methods.map(x => x.method.type), ["key", "oauth"]);
-    assert.equal(h.state.models[0].models[0].id, "default");
+    assert.deepEqual(h.state.models[0].models, []);
     assert.equal(h.state.discoveries, 0);
     for (const hook of h.state.hooks) {
         assert.deepEqual(hook.scope, { providerID: "cursor" });
@@ -217,18 +217,77 @@ test("Cursor uses only scoped hooks, native schemas, and stored key/OAuth method
     assert.throws(() => fallback.createCursor({ apiKey: "ignored" }).languageModel("default"), /not active/);
 });
 
-test("Cursor discovery is account-bound, failure falls back, invalid config is rejected", async () => {
+test("Cursor discovery is account-bound and invalid config is rejected", async () => {
     const h = harness(); h.connect("a");
     await setupCursor(h.ctx, {}, h.protocol);
     assert.equal(h.state.discoveries, 1);
     assert.equal(h.state.models[0].sourceConnection.id, "a");
     assert.equal(h.state.models[0].models[0].limit.context, 123000);
     const switched = harness(); switched.connect("a");
-    switched.protocol.fetchModels = async () => { switched.connect("b"); return [{ id: "wrong-account", variants: [] }]; };
+    switched.protocol.fetchModels = async () => { switched.connect("b"); return [{ id: "composer-2.5", variants: [] }]; };
     await setupCursor(switched.ctx, {}, switched.protocol);
-    assert.equal(switched.state.models[0].models[0].id, "default");
+    assert.deepEqual(switched.state.models[0].models, []);
+    assert.equal(switched.state.models[0].sourceConnection, undefined);
     for (const options of [{ apiKey: "invalid" }, { token: "invalid" }, { baseURL: "https://example.invalid" }, { discoverModels: "false" }])
         await assert.rejects(setupCursor(h.ctx, options, h.protocol), /Cursor:/);
+});
+
+test("Cursor exposes only discovered pool models and preserves their variants", async () => {
+    const h = harness(); h.connect("a");
+    const variant = (key, fast) => ({ key, displayName: key,
+        parameterValues: [{ id: "effort", value: "high" }, { id: "fast", value: String(fast) }],
+        isDefaultNonMax: !fast, isDefaultMax: false });
+    const allowed = ["grok-4.7", "composer-2.5", "grok-4.5", "grok-4.6"].map(id => ({
+        id, displayName: id, supportsAgent: true, maxContext: 256000,
+        variants: [variant("high", false), variant("high-fast", true)],
+    }));
+    const hidden = ["default", "auto", "auto-cost", "auto-balance", "auto-intelligence", "claude-sonnet-fixture",
+        "gpt-fixture", "gemini-fixture", "composer-future", "grok-future", "composer-2.5-unknown"].map(id => ({
+        id, displayName: "Composer 2.5", supportsAgent: true, variants: [],
+    }));
+    const raw = [hidden[0], ...allowed, ...hidden.slice(1)];
+    const before = structuredClone(raw);
+    h.protocol.fetchModels = async () => raw;
+    await setupCursor(h.ctx, {}, h.protocol);
+    const catalog = h.state.models[0].models;
+    assert.deepEqual(catalog.map(m => m.id), allowed.flatMap(m => [m.id, `${m.id}-fast`]));
+    for (const info of catalog) {
+        assert.equal(info.limit.context, 256000);
+        assert.equal(info.variants.length, 1);
+        const event = { model: info };
+        await h.state.hooks.find(x => x.domain === "aisdk").run(event);
+        await event.language.doGenerate({ prompt: [], headers: {} });
+        const call = h.state.calls.at(-1);
+        assert.equal(call.modelID, info.modelID);
+        assert.deepEqual(call.options.availableModels, allowed);
+        assert.deepEqual(info.variants[0].settings.cursorVariantParameters, [
+            { id: "effort", value: "high" }, { id: "fast", value: String(info.id.endsWith("-fast")) },
+        ]);
+    }
+    assert.deepEqual(raw, before);
+
+    // Fast can also be advertised as a separate wire model instead of a variant.
+    const fast = harness(); fast.connect("a");
+    fast.protocol.fetchModels = async () => allowed.map(m => ({ ...m, id: `${m.id}-fast`, variants: [] }));
+    await setupCursor(fast.ctx, {}, fast.protocol);
+    assert.deepEqual(fast.state.models[0].models.map(m => m.id), allowed.map(m => `${m.id}-fast`));
+});
+
+test("missing, failed, disabled or fully filtered Cursor discovery never adds Auto", async () => {
+    for (const scenario of ["missing", "failed", "disabled", "empty", "filtered"]) {
+        const h = harness();
+        if (scenario !== "missing") h.connect("a");
+        h.protocol.fetchModels = async () => {
+            h.state.discoveries++;
+            if (scenario === "failed") throw new Error("fixture discovery unavailable");
+            return scenario === "empty" ? [] : [{ id: "default", variants: [] }, { id: "gpt-fixture", variants: [] }];
+        };
+        await setupCursor(h.ctx, { discoverModels: scenario !== "disabled" }, h.protocol);
+        assert.deepEqual(h.state.models[0].models, [], scenario);
+        assert.equal(h.state.models[0].sourceConnection, undefined, scenario);
+        assert.deepEqual(h.state.methods.map(x => x.method.type), ["key", "oauth"], scenario);
+        assert.equal(h.state.discoveries, ["missing", "disabled"].includes(scenario) ? 0 : 1, scenario);
+    }
 });
 
 test("cached Cursor model resolves current account, isolates checkpoints, preserves native tool catalog", async () => {
@@ -358,7 +417,7 @@ test("real upstream key exchange is cached and forced renewal uses mocked HTTP o
 
 test("discovered variants reach the protocol only for their owning account", async () => {
     const h = harness(); h.connect("a");
-    const raw = { id: "fixture-thinking", displayName: "Thinking", supportsAgent: true, variants: [{
+    const raw = { id: "composer-2.5", displayName: "Thinking", supportsAgent: true, variants: [{
         key: "high", displayName: "High", parameterValues: [{ id: "effort", value: "high" }], isDefaultNonMax: true, isDefaultMax: false,
     }] };
     h.protocol.fetchModels = async () => [raw];

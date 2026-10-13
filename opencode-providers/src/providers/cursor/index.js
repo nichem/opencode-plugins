@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Provider } from "@opencode/plugin";
 import { connectionAuth, API_BASE } from "./auth.js";
-import { modelInfo, fallbackModels } from "./models.js";
+import { modelInfo, cursorPoolModels } from "./models.js";
 import * as upstream from "./upstream.js";
 
 const scope = { providerID: "cursor" };
@@ -16,13 +16,13 @@ export async function setupCursor(ctx, options = {}, protocol = upstream) {
         throw new Error(`Cursor: ${name} must be a boolean`);
     const auth = connectionAuth(ctx, protocol);
     await auth.register();
-    let models = fallbackModels(), sourceConnection, inventoryAccount, availableModels = [];
+    let models = [], sourceConnection, inventoryAccount, availableModels = [];
     // Discovery is deliberately tied to plugin reload, like the other providers.
     // Never reuse another account's cached inventory or subscribe to global events.
     if (options.discoverModels !== false) {
         try {
             const saved = await auth.read();
-            const found = await protocol.fetchModels(await auth.token(saved), { baseURL: API_BASE, timeoutMs: 6000 });
+            const found = cursorPoolModels(await protocol.fetchModels(await auth.token(saved), { baseURL: API_BASE, timeoutMs: 6000 }));
             const current = await auth.read();
             if (identity(saved) === identity(current) && found.length) {
                 models = modelInfo(found);
@@ -30,7 +30,7 @@ export async function setupCursor(ctx, options = {}, protocol = upstream) {
                 inventoryAccount = identity(saved);
                 availableModels = found;
             }
-        } catch { /* Auto remains visible; requests report authentication errors. */ }
+        } catch { /* Keep the catalog empty; never fall back to Auto or another account's models. */ }
     }
     await ctx.provider.transform(editor => editor.add({
         info: { ...Provider.Info.empty(Provider.ID.make("cursor")), name: "Cursor", integrationID: "cursor",

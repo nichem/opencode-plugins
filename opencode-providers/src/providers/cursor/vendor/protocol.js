@@ -323,7 +323,7 @@ function readLinuxMachineId() {
 }
 function readWindowsMachineGuid() {
   try {
-    const out = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { timeout: 5e3 }).toString();
+    const out = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { timeout: 5e3, windowsHide: true }).toString();
     const m = out.split("MachineGuid")[1];
     if (!m)
       return void 0;
@@ -1271,6 +1271,48 @@ function buildBaseHeaders(token, clientVersion, extra) {
   }
   headers["x-request-id"] = crypto.randomUUID();
   return headers;
+}
+async function unaryAvailableModels(token, options = {}) {
+  const base = resolveApiBaseURL(options);
+  const url = `${base}/aiserver.v1.AiService/AvailableModels`;
+  const timeoutMs2 = unaryTimeoutMs("AvailableModels", options.timeoutMs);
+  return withUnaryDeadline("AvailableModels", timeoutMs2, "CURSOR_AVAILABLE_MODELS_TIMEOUT", async (signal) => {
+    const clientVersion = await resolveClientVersion();
+    const headers = buildBaseHeaders(token, clientVersion, options.headers);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          accept: "application/json"
+        },
+        // Request parameterized effort/context/fast variants like Cursor IDE.
+        body: JSON.stringify({
+          includeLongContextModels: true,
+          useModelParameters: true,
+          useCloudAgentEffortModes: true
+        }),
+        signal
+      });
+    } catch (cause) {
+      throw new CursorTransportError("AvailableModels network request failed", {
+        transient: true,
+        replaySafe: true,
+        code: errorCode(cause),
+        cause
+      });
+    }
+    if (!res.ok) {
+      throw await cursorHttpResponseError("AvailableModels failed:", res);
+    }
+    try {
+      return await res.json();
+    } catch (cause) {
+      throw new CursorProtocolError("AvailableModels returned malformed JSON", { cause });
+    }
+  });
 }
 function isAllowedAgentHost(hostname) {
   return /^([a-z0-9-]+\.)+cursor\.sh$/i.test(hostname);
@@ -9322,7 +9364,7 @@ import path9 from "node:path";
 var execFileAsync2 = promisify2(execFile2);
 async function git(cwd, args) {
   try {
-    const { stdout } = await execFileAsync2("git", args, { cwd, encoding: "utf-8", timeout: 5e3 });
+    const { stdout } = await execFileAsync2("git", args, { cwd, encoding: "utf-8", timeout: 5e3, windowsHide: true });
     return stdout.trim();
   } catch {
     return "";
@@ -11593,6 +11635,16 @@ function isPlainRecord(value) {
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
+function optionalBoolean(record, names) {
+  for (const name of names) {
+    if (!Object.hasOwn(record, name))
+      continue;
+    if (record[name] === void 0)
+      return void 0;
+    return typeof record[name] === "boolean" ? record[name] : null;
+  }
+  return void 0;
+}
 function normalizeModelParameterValues(value) {
   if (!Array.isArray(value))
     return null;
@@ -11646,6 +11698,67 @@ function variantContextTokens(v) {
 function isLongContextVariant(v) {
   return variantContextTokens(v) === 1e6;
 }
+function positiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
+}
+function apiBoolean(record, names) {
+  const value = optionalBoolean(record, names);
+  if (value === null)
+    throw new Error(`AvailableModels returned a non-boolean ${names[0]}`);
+  return value ?? false;
+}
+function mapAvailableModelsResponse(raw) {
+  const entries = raw.models ?? [];
+  const models = [];
+  for (const entry of entries) {
+    if (!isPlainRecord(entry))
+      continue;
+    const e = entry;
+    const name = e.name;
+    if (!isNonEmptyString(name))
+      continue;
+    const variants = [];
+    const rawVariants = e.variants ?? [];
+    if (!Array.isArray(rawVariants)) {
+      throw new Error(`AvailableModels returned invalid variants for ${name}`);
+    }
+    for (const v of rawVariants) {
+      if (!isPlainRecord(v)) {
+        throw new Error(`AvailableModels returned an invalid variant for ${name}`);
+      }
+      const rawParams = v.parameterValues ?? v.parameter_values ?? [];
+      const parameterValues = normalizeModelParameterValues(rawParams);
+      if (!parameterValues) {
+        throw new Error(`AvailableModels returned invalid parameter values for ${name}`);
+      }
+      variants.push({
+        key: name,
+        parameterValues,
+        displayName: v.displayName ?? v.display_name ?? name,
+        isDefaultNonMax: apiBoolean(v, ["isDefaultNonMaxConfig", "is_default_non_max_config"]),
+        isDefaultMax: apiBoolean(v, ["isDefaultMaxConfig", "is_default_max_config"])
+      });
+    }
+    const variantBaseContext = variantContextTokens(variants.find((v) => v.isDefaultNonMax)) ?? variantContextTokens(variants.find((v) => variantContextTokens(v) !== 1e6)) ?? variantContextTokens(variants.find((v) => v.parameterValues.some((p) => p.id === "context")));
+    const variantMaxContext = variantContextTokens(variants.find((v) => v.isDefaultMax));
+    const supportsImages = optionalBoolean(e, ["supportsImages", "supports_images"]);
+    if (supportsImages === null) {
+      throw new Error(`AvailableModels returned invalid supportsImages for ${name}`);
+    }
+    models.push({
+      id: name,
+      displayName: e.clientDisplayName ?? e.client_display_name ?? name,
+      supportsThinking: apiBoolean(e, ["supportsThinking", "supports_thinking"]),
+      supportsAgent: apiBoolean(e, ["supportsAgent", "supports_agent"]),
+      ...supportsImages === void 0 ? {} : { supportsImages },
+      maxContext: variantBaseContext ?? positiveNumber(e.contextTokenLimit ?? e.context_token_limit),
+      maxContextForMaxMode: variantMaxContext ?? positiveNumber(e.contextTokenLimitForMaxMode ?? e.context_token_limit_for_max_mode),
+      supportsMaxMode: apiBoolean(e, ["supportsMaxMode", "supports_max_mode"]),
+      variants
+    });
+  }
+  return models;
+}
 function resolveVariantParameters(model, opts = {}) {
   const picked = opts.picked?.map((p) => ({ ...p }));
   if (!model || model.variants.length === 0) {
@@ -11689,6 +11802,10 @@ function resolveVariantParameters(model, opts = {}) {
     reasoningEffort: opts.reasoningEffort,
     maxMode: false
   });
+}
+async function fetchModels(token, options = {}) {
+  const raw = await unaryAvailableModels(token, options);
+  return mapAvailableModelsResponse(raw);
 }
 
 // dist/context/dynamic-catalog.js
@@ -16324,6 +16441,7 @@ export {
   decodeMessage,
   doStreamImpl,
   encodeMessage,
+  fetchModels,
   findContinuationSession,
   followHostPlanAgent,
   getActiveCursorMode,

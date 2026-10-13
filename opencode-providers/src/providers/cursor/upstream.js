@@ -5,9 +5,9 @@ const [renewal, mapping] = await Promise.all([
     import(new URL("auth-renewal.js", root).href),
     import(new URL("model-config.js", root).href),
 ]);
-export { fetchModels } from "cursor-opencode-provider/models";
 export { toOpenCode2Costs } from "cursor-opencode-provider/pricing";
 export { generatePkceParams, generatePkceChallenge, buildLoginUrl, decodeJwtExpiryMs, isExchangeableApiKey } from "cursor-opencode-provider/auth";
-export { createSdk } from "./vendor/protocol.js";
+// Discovery and generation share the patched helpers, including hidden Windows subprocesses.
+export { createSdk, fetchModels } from "./vendor/protocol.js";
 export const { resolveApiKeyToken, renewSessionIfDue } = renewal;
 export const { modelsToConfig } = mapping;

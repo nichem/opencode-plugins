@@ -60,9 +60,13 @@ try {
     const integration = await api("/api/integration/cursor");
     assert.ok(integration.ok);
     assert.deepEqual(integration.data.methods.map(m => m.type).sort(), ["key", "oauth"]);
-    const request = await api("/api/experimental/generate", { prompt: "fixture", model: { providerID: "cursor", id: "default" } });
-    assert.match(JSON.stringify(request.data), /Cursor:.*connect/);
-    console.log("PASS: real OpenCode 2.x registered Cursor Auto and browser/key login; request reached the saved-connection check.");
+    const provider = await api("/api/provider/cursor");
+    assert.ok(provider.ok);
+    assert.equal(provider.data.id, "cursor");
+    const models = await api("/api/model");
+    assert.ok(models.ok);
+    assert.deepEqual(models.data.filter(model => model.providerID === "cursor"), []);
+    console.log("PASS: real OpenCode 2.x registered Cursor and browser/key login; disabled discovery left no models or Auto fallback.");
     console.log("No real credential, agent document or Cursor generation request was used.");
 } finally {
     child.kill("SIGKILL");
