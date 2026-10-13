@@ -11,6 +11,7 @@
 ## 插件与分发
 
 - 本仓库维护 OpenCode **2.x** 插件；适配时核实实际 API 和本机版本，不照搬旧版接口。
+- 新增供应商不得改变 OpenCode 的原有行为或其他供应商的行为；适配限制在对应供应商请求内，不擅自修改全局 MCP、shell、权限、工具目录或 agent 切换。无法隔离的功能先说明取舍。
 - **不发布到 npm。** 交互式安装入口是 `npx github:nichem/opencode-plugins`，根包保留 `private: true`。安装依赖和运行 npm 脚本不属于发布。
 - 给用户安装插件使用本仓库 GitHub 地址，未经明确要求，不改成工作区路径或其他本地加载方式。
 - 插件子目录通过 `git+https://github.com/nichem/opencode-plugins.git#<ref>::path:<插件目录>` 安装；裸包名不等于本仓库版本。

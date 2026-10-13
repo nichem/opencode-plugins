@@ -8,7 +8,7 @@ import { discoverModels, validateOptions } from "../src/providers/krill/models.j
 
 function host() {
     const state = { key: "fake-krill-a", hooks: [], records: [], methods: [] };
-    const ctx = { options: { providers: { qoder: { enabled: false }, krill: { discoverModels: false } } },
+    const ctx = { options: { providers: { qoder: { enabled: false }, cursor: { enabled: false }, krill: { discoverModels: false } } },
         integration: {
             transform: async fn => fn({ update: (id, update) => update({ id }), method: { update: value => state.methods.push(value) } }),
             connection: { active: async id => { assert.equal(id, "krill"); return state.key ? { type: "credential" } : undefined; },
