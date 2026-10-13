@@ -81,6 +81,31 @@ try {
   assert.equal(afterStatus.filter(message => message.metadata?.goal === "continuation").length, continuations)
   assert.equal(afterStatus.filter(message => message.type === "assistant").length, assistantCount, "Viewing /goal must not call the model")
   console.log("PASS: actual OpenCode 2.x loaded /goal, auto-continued, executed update_goal, and stopped after completion.")
+  for (const action of ["pause", "clear"]) {
+    const busy = await api("/api/session", { title: `Goal ${action} admission smoke`, model: { providerID: "goal-test", id: "slow" } })
+    const command = text => api(`/api/session/${busy.id}/command`, { name: "goal", text })
+    await command("Run the slow offline task")
+    let running = false
+    for (let i = 0; i < 50; i++) {
+      if ((await api("/api/session/active"))[busy.id]) { running = true; break }
+      await delay(20)
+    }
+    assert.ok(running, "The initial goal turn must be running")
+    await command("append First additional requirement")
+    await delay(100)
+    await command("append Latest requirement")
+    await delay(100)
+    assert.deepEqual(await api(`/api/session/${busy.id}/inbox`), [], "Busy goals must not enqueue additional model turns")
+    await command(action)
+    await api(`/api/experimental/session/${busy.id}/wait`, {})
+    await delay(300)
+    assert.deepEqual(await api(`/api/session/${busy.id}/inbox`), [])
+    const history = await api(`/api/session/${busy.id}/context`)
+    assert.equal(history.filter(message => message.type === "assistant").length, 1, `${action} must prevent an extra turn`)
+    const result = await api("/api/rpc/opencode-goal/status", { input: { sessionID: busy.id } })
+    assert.match(JSON.stringify(result), action === "pause" ? /Status: paused/ : /No goal is currently set/)
+  }
+  console.log("PASS: appending to a running goal does not queue turns; pause and clear cancel pending continuations.")
 } catch (error) {
   writeFileSync(join(root, "server.log"), logs.replace(/server password \S+/g, "server password [REDACTED]"))
   throw error
