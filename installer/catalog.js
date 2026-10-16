@@ -1,6 +1,6 @@
 export const repo = "https://github.com/nichem/opencode-plugins.git";
 export const catalog = [
-    { id: "opencode-providers", title: "供应商：Qoder CN / Krill / Cursor", targets: ["server"] },
+    { id: "opencode-providers", title: "供应商：Qoder CN / Krill", targets: ["server"] },
     { id: "opencode-goal", title: "目标管理与自动续跑", targets: ["server", "tui"] },
     { id: "opencode-message-delete", title: "删除末尾 AI 消息", targets: ["tui"] },
     { id: "opencode-agents", title: "内置 Markdown agent", targets: ["server"] },
