@@ -16,22 +16,70 @@ export async function latestRevision() {
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("无法获取 GitHub main 版本");
     return sha;
 }
-export function statuses(configs, latest, installed = "") {
+function installedVersions(installed) {
     const versions = new Map();
     for (const line of installed.split(/\r?\n/)) {
         const columns = line.trim().split(/\s+/);
         const item = identify(columns.at(-1));
         if (item && /^[a-f0-9]{7,40}$/.test(columns[1])) versions.set(item.id, columns[1]);
     }
+    return versions;
+}
+
+function configuredRevisions(configs, id, versions) {
+    return configs.flatMap(c => (c.data.plugins ?? []).map(identify)
+        .filter(item => item?.id === id)
+        .map(item => /^[a-f0-9]{40}$/.test(item.revision) ? item.revision : versions.get(id)));
+}
+
+// Only commit metadata and the root tree are requested; never request blobs,
+// recursive trees, commit diffs, or agent document contents.
+export async function revisionTrees(revision, request = fetch) {
+    if (!/^[a-f0-9]{7,40}$/.test(revision)) throw new Error("无效的提交版本");
+    const get = async path => {
+        const response = await request(`https://api.github.com/repos/nichem/opencode-plugins/${path}`, {
+            headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30000),
+        });
+        if (!response.ok) throw new Error(`GitHub 目录版本检查失败 (${response.status})`);
+        return response.json();
+    };
+    const commits = await get(`commits?sha=${revision}&per_page=1`);
+    const commit = commits?.[0];
+    if (!/^[a-f0-9]{40}$/.test(commit?.sha) || !commit.sha.startsWith(revision)
+        || !/^[a-f0-9]{40}$/.test(commit?.commit?.tree?.sha)) throw new Error("无法解析提交版本");
+    const root = await get(`git/trees/${commit.commit.tree.sha}`);
+    if (root.truncated || !Array.isArray(root.tree)) throw new Error("目录版本数据不完整");
+    return new Map(root.tree.filter(entry => entry.type === "tree" && catalog.some(p => p.id === entry.path)
+        && /^[a-f0-9]{40}$/.test(entry.sha)).map(entry => [entry.path, entry.sha]));
+}
+
+export async function loadVersionTrees(configs, latest, installed = "", readTrees = revisionTrees) {
+    const versions = installedVersions(installed);
+    const revisions = new Set(catalog.flatMap(p => configuredRevisions(configs, p.id, versions)).filter(Boolean));
+    if (![...revisions].some(ref => ref !== latest)) return new Map();
+    revisions.add(latest);
+    const results = await Promise.all([...revisions].map(async ref => {
+        try { return [ref, await readTrees(ref)]; } catch { return [ref, undefined]; }
+    }));
+    return new Map(results);
+}
+
+export function statuses(configs, latest, installed = "", trees = new Map()) {
+    const versions = installedVersions(installed);
     return catalog.map(plugin => {
         const present = configs.filter(c => (c.data.plugins ?? []).some(e => identify(e)?.id === plugin.id));
         if (!present.length) return { ...plugin, state: "absent", label: "未安装" };
         if (!plugin.targets.every(kind => present.some(c => c.kind === kind))) return { ...plugin, state: "repair", label: "配置不完整 · 可修复" };
         if (!latest) return { ...plugin, state: "unknown", label: "更新检查失败 · 请重试" };
-        const refs = present.flatMap(c => c.data.plugins.filter(e => identify(e)?.id === plugin.id).map(e => identify(e).revision));
-        const revisions = refs.map(ref => /^[a-f0-9]{40}$/.test(ref) ? ref : versions.get(plugin.id));
+        const revisions = configuredRevisions(present, plugin.id, versions);
         if (revisions.some(ref => !ref)) return { ...plugin, state: "repair", label: "版本未知 · 可重新安装" };
-        const current = revisions.every(ref => latest.startsWith(ref));
+        const comparison = revisions.map(ref => {
+            if (ref === latest) return true;
+            const before = trees.get(ref)?.get(plugin.id), after = trees.get(latest)?.get(plugin.id);
+            return before && after ? before === after : undefined;
+        });
+        if (comparison.includes(undefined)) return { ...plugin, state: "unknown", label: "版本检查失败 · 请重试" };
+        const current = comparison.every(Boolean);
         return { ...plugin, state: current ? "current" : "update", label: current ? "已安装 · 最新" : "已安装 · 有更新" };
     });
 }
