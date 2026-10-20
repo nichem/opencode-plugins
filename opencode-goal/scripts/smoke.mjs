@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -18,7 +18,8 @@ writeFileSync(join(project, "opencode.json"), JSON.stringify({ plugins: [plugin,
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key) && !/^OPENCODE|^QODER/i.test(key)))
 Object.assign(env, { XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"),
   XDG_CACHE_HOME: join(root, "cache"), XDG_STATE_HOME: join(root, "state"), OPENCODE_CONFIG_DIR: config,
-  OPENCODE_TEST_HOME: join(root, "home"), OPENCODE_DB: join(root, "smoke.db") })
+  OPENCODE_TEST_HOME: join(root, "home"), OPENCODE_DB: join(root, "smoke.db"),
+  GOAL_SMOKE_COMPLETION_GATE: join(root, "release-completion") })
 const probe = createServer()
 await new Promise(resolve => probe.listen(0, "127.0.0.1", resolve))
 const port = probe.address().port
@@ -106,6 +107,32 @@ try {
     assert.match(JSON.stringify(result), action === "pause" ? /Status: paused/ : /No goal is currently set/)
   }
   console.log("PASS: appending to a running goal does not queue turns; pause and clear cancel pending continuations.")
+  const revised = await api("/api/session", { title: "Goal revision smoke", model: { providerID: "goal-test", id: "revision" } })
+  const revise = text => api(`/api/session/${revised.id}/command`, { name: "goal", text })
+  await revise("Goal revision original fixture")
+  for (let i = 0; i < 100 && !existsSync(`${env.GOAL_SMOKE_COMPLETION_GATE}.started`); i++) await delay(50)
+  assert.ok(existsSync(`${env.GOAL_SMOKE_COMPLETION_GATE}.started`), "Original request must capture its tool snapshot")
+  await revise("Goal revision replacement fixture")
+  writeFileSync(env.GOAL_SMOKE_COMPLETION_GATE, "release")
+  let revisedHistory = []
+  for (let i = 0; i < 100; i++) {
+    await delay(100)
+    revisedHistory = await api(`/api/session/${revised.id}/context`)
+    if (JSON.stringify(revisedHistory).includes("Goal complete.")) break
+  }
+  assert.equal([...JSON.stringify(revisedHistory).matchAll(/completion ignored/g)].length, 3,
+    "The original request and both retries must not complete the replacement")
+  const revisedTurns = revisedHistory.filter(message => message.metadata?.goal === "continuation")
+  assert.equal(revisedTurns.length, 2, "The replacement must get its own continuation")
+  assert.match(JSON.stringify(revisedTurns[1]), /Goal revision replacement fixture/)
+  const revisedStatus = await api("/api/rpc/opencode-goal/status", { input: { sessionID: revised.id } })
+  assert.match(JSON.stringify(revisedStatus), /Status: complete/)
+  const requests = readFileSync(`${env.GOAL_SMOKE_COMPLETION_GATE}.requests`, "utf8").trim().split("\n").map(line => JSON.parse(line))
+  assert.equal(requests.length >= 5, true, "The mock must exercise retries and a fresh continuation")
+  assert.ok(requests.slice(0, 3).every(request => request.complete && !request.hasReplacement
+    && request.revision === requests[0].revision), "Retries must use only the original context's revision")
+  assert.ok(requests[4].complete && requests[4].hasReplacement && requests[4].revision !== requests[0].revision)
+  console.log("PASS: old-context completion retries cannot finish a replacement goal; its own continuation supplies the valid revision.")
 } catch (error) {
   writeFileSync(join(root, "server.log"), logs.replace(/server password \S+/g, "server password [REDACTED]"))
   throw error

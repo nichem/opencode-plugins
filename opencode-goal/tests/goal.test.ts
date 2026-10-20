@@ -41,16 +41,23 @@ function host(storage = new Map<string, any>()) {
   }
   return { ctx, messages, sessions, storage, tools, hooks,
     goal: (id = "s1") => [...storage].find(([key]) => key.endsWith(`/${id}`))?.[1]?.goal,
+    completionInput: (id = "s1") => ({ status: "complete",
+      revision: [...storage].find(([key]) => key.endsWith(`/${id}`))?.[1]?.revision }),
     continuations: () => messages.filter(m => m.resume === true) }
 }
 const terminal = (id: string, eventID: string) => ({ id: eventID, type: "session.execution.succeeded", data: { sessionID: id } })
+function completionFromPrompt(text: string) {
+  const revision = /<goal_revision>([^<]+)<\/goal_revision>/.exec(text)?.[1]
+  assert.ok(revision, "The delivered goal must supply its completion revision")
+  return { status: "complete", revision }
+}
 
 test("original command parser, elapsed time and objective escaping", () => {
   assert.deepEqual(parseGoalCommand("append more\nsteps"), { kind: "append", objective: "more\nsteps" })
   assert.deepEqual(parseGoalCommand("PAUSE"), { kind: "pause" })
   const goal: any = { status: "active", activeStartedAt: 1000, timeUsedSeconds: 4 }
   assert.equal(accounted(goal, 6000).timeUsedSeconds, 9)
-  assert.match(renderContinuationPrompt({ objective: "</untrusted_objective>", timeUsedSeconds: 0 }), /&lt;\/untrusted_objective&gt;/)
+  assert.match(renderContinuationPrompt({ objective: "</untrusted_objective>", revision: "fixture", timeUsedSeconds: 0 }), /&lt;\/untrusted_objective&gt;/)
   assert.equal(parseGoal({ ...goal, objective: "bad", createdAt: 0, updatedAt: 0, timeUsedSeconds: -1 }), undefined)
 })
 
@@ -82,7 +89,7 @@ test("busy sessions keep continuations local and pause/clear/completion cancel a
     await c.command("s1", "work")
     await delay(90)
     assert.equal(h.continuations().length, 0)
-    if (operation === "complete") await h.tools().update_goal.execute({ status: "complete" }, { sessionID: "s1" })
+    if (operation === "complete") await h.tools().update_goal.execute(h.completionInput(), { sessionID: "s1" })
     else await c.command("s1", operation)
     assert.equal(aborted, true)
     release()
@@ -138,7 +145,7 @@ test("cancellation invalidates admission during every post-idle asynchronous bou
           const mutation = action === "user"
             ? c.event({ type: "session.inbox.enqueued", data: { sessionID: "s1", item: { type: "user" } } })
             : action === "complete"
-              ? h.tools().update_goal.execute({ status: "complete" }, { sessionID: "s1" })
+              ? h.tools().update_goal.execute(h.completionInput(), { sessionID: "s1" })
               : c.command("s1", action)
           assert.equal(signal.aborted, true, "Cancellation must not wait for the serial queue")
           release()
@@ -252,7 +259,7 @@ test("commands preserve accounting, pause/resume, completion and session tool is
   await c.command("s1", "resume")
   await delay(90)
   assert.equal(h.continuations().length, 2)
-  const result = await h.tools().update_goal.execute({ status: "complete" }, { sessionID: "s1" })
+  const result = await h.tools().update_goal.execute(h.completionInput(), { sessionID: "s1" })
   assert.match(result.content, /Final elapsed time/)
   assert.equal(h.goal().status, "complete")
   assert.deepEqual(Object.keys(h.tools()), [])
@@ -261,6 +268,167 @@ test("commands preserve accounting, pause/resume, completion and session tool is
   assert.equal(h.continuations().length, 2)
   await c.command("s1", "clear")
   assert.equal(h.goal(), null)
+})
+
+test("old completion snapshots cannot finish edited or recreated goals or cancel their continuation", async t => {
+  for (const commands of [["replacement"], ["append extra"], ["clear", "original"], ["pause", "resume"]]) {
+    for (const stage of ["timer", "waiting"]) {
+      await t.test(`${commands.join(", ")}: ${stage}`, async () => {
+        const h = host(), c = new GoalController(h.ctx)
+        let release!: () => void, signal!: AbortSignal, entered!: () => void
+        const waiting = new Promise<void>(resolve => { entered = resolve })
+        if (stage === "waiting") h.ctx.session.wait = async (_input: unknown, options: { signal: AbortSignal }) => {
+          signal = options.signal
+          entered()
+          await new Promise<void>((resolve, reject) => {
+            release = resolve
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+          })
+        }
+        await c.initialize()
+        try {
+          await c.command("s1", "original")
+          const old = h.tools().update_goal
+          const oldInput = h.completionInput()
+          for (const command of commands) await c.command("s1", command)
+          if (stage === "waiting") await waiting
+          const result = await old.execute(oldInput, { sessionID: "s1" })
+          assert.match(result.content, /completion ignored/)
+          for (let retry = 0; retry < 2; retry++) {
+            const repeated = await h.tools().update_goal.execute(oldInput, { sessionID: "s1" })
+            assert.match(repeated.content, /completion ignored/, "A refreshed tool must not lend the old context a new revision")
+          }
+          assert.equal(h.goal().status, "active")
+          if (stage === "waiting") {
+            assert.equal(signal.aborted, false, "A stale tool must not cancel the replacement's wait")
+            release()
+          }
+          await delay(90)
+          assert.equal(h.continuations().length, 1, "A stale tool must not cancel the replacement's timer")
+          assert.ok(h.continuations()[0].text.includes(h.goal().objective))
+          const fresh = await h.tools().update_goal.execute(completionFromPrompt(h.continuations()[0].text), { sessionID: "s1" })
+          assert.match(fresh.content, /Goal complete/)
+          assert.equal(h.goal().status, "complete")
+        } finally { release?.(); await c.close() }
+      })
+    }
+  }
+})
+
+test("completion requires the delivered revision even when tools refresh between retries", async () => {
+  const h = host(), c = new GoalController(h.ctx)
+  let release!: () => void, signal!: AbortSignal, entered!: () => void
+  const waiting = new Promise<void>(resolve => { entered = resolve })
+  await c.initialize()
+  try {
+    await c.command("s1", "original")
+    await delay(90)
+    const original = completionFromPrompt(h.continuations()[0].text)
+    const old = h.tools().update_goal
+    h.ctx.session.wait = async (_input: unknown, options: { signal: AbortSignal }) => {
+      signal = options.signal
+      entered()
+      await new Promise<void>((resolve, reject) => {
+        release = resolve
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+      })
+    }
+    await c.command("s1", "replacement")
+    await waiting
+    assert.match((await old.execute(original, { sessionID: "s1" })).content, /completion ignored/)
+    for (const input of [original, original, { status: "complete" }, { status: "complete", revision: "unknown" }]) {
+      const result = await h.tools().update_goal.execute(input, { sessionID: "s1" })
+      assert.match(result.content, /completion ignored/)
+      assert.ok(!result.content.includes(h.completionInput().revision), "A rejection must not reveal an unseen revision")
+      assert.equal(h.goal().status, "active")
+      assert.equal(signal.aborted, false)
+      assert.equal(h.continuations().length, 1)
+    }
+    release()
+    await delay(90)
+    assert.equal(h.continuations().length, 2)
+    const delivered = completionFromPrompt(h.continuations()[1].text)
+    assert.notEqual(delivered.revision, original.revision)
+    const fresh = await h.tools().update_goal.execute(delivered, { sessionID: "s1" })
+    assert.match(fresh.content, /Goal complete/)
+    assert.equal(h.goal().status, "complete")
+  } finally { release?.(); await c.close() }
+})
+
+test("old completion cannot supersede an edit whose storage write is pending", async () => {
+  const h = host(), c = new GoalController(h.ctx)
+  let release!: () => void, entered!: () => void
+  const writing = new Promise<void>(resolve => { entered = resolve })
+  await c.initialize()
+  try {
+    await c.command("s1", "original")
+    const old = h.tools().update_goal
+    const oldInput = h.completionInput()
+    const save = h.ctx.storage.set
+    h.ctx.storage.set = async (...args: any[]) => {
+      h.ctx.storage.set = save
+      entered()
+      await new Promise<void>(resolve => { release = resolve })
+      return save(...args)
+    }
+    const edit = c.command("s1", "replacement")
+    await writing
+    const completion = old.execute(oldInput, { sessionID: "s1" })
+    release()
+    const [, result] = await Promise.all([edit, completion])
+    assert.match(result.content, /completion ignored/)
+    await delay(90)
+    assert.equal(h.goal().status, "active")
+    assert.equal(h.continuations().length, 1)
+    assert.match(h.continuations()[0].text, /replacement/)
+  } finally { release?.(); await c.close() }
+})
+
+test("completion rechecks the goal after an asynchronous session lookup", async () => {
+  const h = host(), c = new GoalController(h.ctx)
+  let release!: () => void, entered!: () => void
+  const looking = new Promise<void>(resolve => { entered = resolve })
+  await c.initialize()
+  try {
+    await c.command("s1", "original")
+    const old = h.tools().update_goal
+    const oldInput = h.completionInput()
+    const get = h.ctx.session.get
+    h.ctx.session.get = async (...args: any[]) => {
+      h.ctx.session.get = get
+      entered()
+      await new Promise<void>(resolve => { release = resolve })
+      return get(...args)
+    }
+    const completion = old.execute(oldInput, { sessionID: "s1" })
+    await looking
+    const edit = c.command("s1", "append extra")
+    release()
+    const [result] = await Promise.all([completion, edit])
+    assert.match(result.content, /completion ignored/)
+    await delay(90)
+    assert.equal(h.goal().status, "active")
+    assert.equal(h.continuations().length, 1)
+  } finally { release?.(); await c.close() }
+})
+
+test("accounting, failed edits and other sessions do not invalidate a current completion snapshot", async () => {
+  const h = host(), c = new GoalController(h.ctx)
+  await c.initialize()
+  try {
+    await c.command("s1", "original")
+    const snapshot = h.tools().update_goal
+    const input = h.completionInput()
+    await c.event(terminal("s1", "checkpoint"))
+    const save = h.ctx.storage.set
+    h.ctx.storage.set = async () => { h.ctx.storage.set = save; throw new Error("disk failure") }
+    await assert.rejects(c.command("s1", "append failed"), /disk failure/)
+    await c.command("s2", "another session")
+    const result = await snapshot.execute(input, { sessionID: "s1" })
+    assert.match(result.content, /Goal complete/)
+    assert.equal(h.goal().status, "complete")
+    assert.equal(h.goal("s2").status, "active")
+  } finally { await c.close() }
 })
 
 test("duplicate terminal events do not duplicate continuations; no-tool turns enter recovery", async t => {
@@ -306,12 +474,16 @@ test("restart retains state and tombstones without counting offline time or auto
   await c.command("s1", "persistent")
   await c.close()
   const elapsed = h.goal().timeUsedSeconds
-  for (const value of h.storage.values()) if (value.goal) value.goal.activeStartedAt = 1
+  for (const value of h.storage.values()) if (value.goal) {
+    value.goal.activeStartedAt = 1
+    delete value.revision // State written before completion revisions were introduced.
+  }
   const restored = host(h.storage), next = new GoalController(restored.ctx)
   await next.initialize()
   try {
     assert.equal(restored.goal().timeUsedSeconds, elapsed)
     assert.ok(restored.goal().activeStartedAt > 1)
+    assert.equal(typeof [...restored.storage.values()][0].revision, "string")
     await delay(90)
     assert.equal(restored.continuations().length, 0)
     await next.event(terminal("s1", "restored-event"))

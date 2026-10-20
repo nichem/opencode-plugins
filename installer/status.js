@@ -20,16 +20,19 @@ function installedVersions(installed) {
     const versions = new Map();
     for (const line of installed.split(/\r?\n/)) {
         const columns = line.trim().split(/\s+/);
-        const item = identify(columns.at(-1));
-        if (item && /^[a-f0-9]{7,40}$/.test(columns[1])) versions.set(item.id, columns[1]);
+        const source = columns.at(-1);
+        if (identify(source) && /^[a-f0-9]{7,40}$/.test(columns[1])) versions.set(source, columns[1]);
     }
     return versions;
 }
 
 function configuredRevisions(configs, id, versions) {
-    return configs.flatMap(c => (c.data.plugins ?? []).map(identify)
-        .filter(item => item?.id === id)
-        .map(item => /^[a-f0-9]{40}$/.test(item.revision) ? item.revision : versions.get(id)));
+    return configs.flatMap(c => (c.data.plugins ?? []).flatMap(entry => {
+        const item = identify(entry);
+        if (item?.id !== id) return [];
+        const source = typeof entry === "string" ? entry : entry.package;
+        return [/^[a-f0-9]{40}$/.test(item.revision) ? item.revision : versions.get(source)];
+    }));
 }
 
 // Only commit metadata and the root tree are requested; never request blobs,

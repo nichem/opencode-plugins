@@ -35,13 +35,13 @@ npx github:nichem/opencode-plugins
 
 版本按各插件整个目录的 Git tree hash 判断：比较已安装提交与 `main` 最新提交中的对应目录，内容相同就视为最新版。其他插件、根目录文档或安装器的修改不会触发该插件的更新提示；插件目录内的文档和测试变化仍算更新，改动撤销后内容相同也不会提示更新。安装时仍固定到本次检查的完整提交 SHA；后续更新请重新运行上面的命令。
 
-安装器从配置或 OpenCode 缓存确定已安装提交，通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
+安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的不同分支、标签或地址写法不会互借版本。Goal 的两个入口分别比较，全部一致才显示最新版。通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
 
 改动前备份到 `~/.local/state/opencode-plugins/backups/`（设置 `XDG_STATE_HOME` 时跟随该目录），完成后尝试 `opencode reload`。请重新打开 OpenCode 终端界面，由 OpenCode 下载并加载插件。
 
 ### 手动配置
 
-配置目录默认是 `~/.config/opencode/`，Windows 对应 `%USERPROFILE%\.config\opencode\`。如果设置了 `XDG_CONFIG_HOME`，则使用该目录下的 `opencode/`。
+配置目录默认是 `~/.config/opencode/`，Windows 对应 `%USERPROFILE%\.config\opencode\`。如果设置了 `XDG_CONFIG_HOME`，则使用该目录下的 `opencode/`；设置 `OPENCODE_CONFIG_DIR` 时优先使用其指定目录，服务端配置和终端界面的 `cli.json` 均跟随该目录，安装、更新和卸载使用同一规则。
 
 **将以下条目合并到已有的 `plugins` 数组中，保留其他配置。** 安装部分插件时，只保留对应条目即可。
 
@@ -117,7 +117,7 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 /goal clear
 ```
 
-目标活跃时自动续跑，由模型通过 `update_goal` 标记完成。用户中断或执行失败会暂停目标；暂停不会主动中断正在执行的请求。本版本基于 `mirsella/opencode-goal 0.4.3` 迁移，详细行为见 [Goal 文档](./opencode-goal/README.md)。
+目标活跃时自动续跑，由模型通过 `update_goal` 标记完成，并原样传回续跑提示中的目标版本。运行中替换或追加目标后，旧上下文的完成调用及后续重试都会被拒绝，新目标继续执行。用户中断或执行失败会暂停目标；暂停不会主动中断正在执行的请求。本版本基于 `mirsella/opencode-goal 0.4.3` 迁移，详细行为见 [Goal 文档](./opencode-goal/README.md)。
 
 ### 删除末尾 AI 消息
 

@@ -60,6 +60,37 @@ test("short cached revisions resolve through metadata and nonrecursive root tree
     assert.equal(statuses(configs, latest, installed, loaded)[0].state, "current");
 });
 
+test("different Goal refs retain their own cached revisions regardless of list order", async () => {
+    const id = "opencode-goal", main = specifier(id, "main"), release = specifier(id, "release");
+    const configs = [cfg("server", id, "main"), { kind: "tui", data: { plugins: [{ package: release, options: {} }] } }];
+    const rows = [`- ${old.slice(0, 7)} ${release}`, `${id} ${latest.slice(0, 7)} ${main}`];
+    for (const installed of [rows.join("\n"), rows.toReversed().join("\n")]) {
+        const calls = [];
+        const trees = await loadVersionTrees(configs, latest, installed, async ref => {
+            calls.push(ref);
+            return new Map([[id, ref.startsWith(old.slice(0, 7)) ? "old-tree" : "new-tree"]]);
+        });
+        assert.deepEqual(new Set(calls), new Set([old.slice(0, 7), latest.slice(0, 7), latest]));
+        assert.equal(statuses(configs, latest, installed, trees)[1].state, "update");
+        trees.get(old.slice(0, 7)).set(id, "new-tree");
+        assert.equal(statuses(configs, latest, installed, trees)[1].state, "current");
+    }
+});
+
+test("a missing cached source cannot borrow another ref or URL alias's version", async () => {
+    const id = "opencode-goal";
+    const configs = [cfg("server", id, "main"), cfg("tui", id, "release")];
+    const installed = `${id} ${latest} ${specifier(id, "main")}`;
+    const trees = await loadVersionTrees(configs, latest, installed, () => assert.fail("unnecessary query"));
+    assert.equal(statuses(configs, latest, installed, trees)[1].state, "repair");
+    const alias = `github:nichem/opencode-plugins#main::path:${id}`;
+    configs[1].data.plugins = [alias];
+    assert.equal(statuses(configs, latest, installed)[1].state, "repair");
+    const both = `${installed}\n- ${old} ${alias}`;
+    const versions = await loadVersionTrees(configs, latest, both, async ref => new Map([[id, ref]]));
+    assert.equal(statuses(configs, latest, both, versions)[1].state, "update");
+});
+
 test("invalid, unresolved, truncated and failed API responses cannot imply latest", async () => {
     await assert.rejects(revisionTrees("main", () => assert.fail("invalid request")));
     await assert.rejects(revisionTrees(old, async () => ({ ok: false, status: 403 })));

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { Plugin } from "@opencode/plugin"
 import { Schema } from "effect"
 import { NO_GOAL, accounted, formatElapsed, formatGoalSummary, parseGoalCommand,
@@ -7,7 +7,7 @@ import { loadLegacy, parseGoal } from "./state.ts"
 import { GoalRPC } from "./rpc.ts"
 
 type Context = Plugin.Context
-type Stored = { goal: GoalState | null; terminal?: string }
+type Stored = { goal: GoalState | null; revision: string; terminal?: string }
 type Operation = Exclude<GoalCommand, { kind: "show" }> | { kind: "complete" }
 const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16)
 
@@ -30,6 +30,7 @@ export class GoalController {
   private waiting = new Map<string, AbortController>()
   private waits = new Set<Promise<void>>()
   private intents = new Map<string, object>()
+  private pendingCommands = new Map<string, number>()
   private pendingTerminals = new Map<string, Set<string>>()
   private continuing = new Set<string>()
   private usedTools = new Set<string>()
@@ -63,6 +64,7 @@ export class GoalController {
     const raw = await this.ctx.storage.get(this.prefix + id) as Stored | undefined
     const goal = raw ? parseGoal(raw.goal) : this.legacy.get(id)
     const record: Stored = { goal: goal ? { ...goal, activeStartedAt: goal.status === "active" ? Date.now() : null } : null,
+      revision: typeof raw?.revision === "string" ? raw.revision : randomUUID(),
       ...(typeof raw?.terminal === "string" ? { terminal: raw.terminal } : {}) }
     this.records.set(id, record)
     if (goal) await this.save(id, record)
@@ -152,7 +154,7 @@ export class GoalController {
         message = `Goal complete. Final elapsed time: ${formatElapsed(next.timeUsedSeconds)}.`
         break
     }
-    await this.save(id, { ...record, goal: next })
+    await this.save(id, { ...record, goal: next, revision: randomUUID() })
     this.cancel(id)
     if (next?.status === "active" && (!intent || this.intents.get(id) === intent)) this.schedule(id)
     return next ? `${message}\n\n${formatGoalSummary(next)}` : `${message}\n${NO_GOAL}`
@@ -219,7 +221,7 @@ export class GoalController {
     if (signal.aborted) return
     this.usedTools.delete(id)
     await this.ctx.session.synthetic({ sessionID: id, resume: true, delivery: "queue",
-      text: renderContinuationPrompt({ objective: goal.objective, timeUsedSeconds: goal.timeUsedSeconds,
+      text: renderContinuationPrompt({ objective: goal.objective, revision: record.revision, timeUsedSeconds: goal.timeUsedSeconds,
         mode: (this.stagnant.get(id) ?? 0) >= 2 ? "recovery" : "normal" }),
       description: "Continue working toward the active goal",
       metadata: { goal: "continuation" } }, { signal })
@@ -236,6 +238,9 @@ export class GoalController {
       ((operation.kind === "set" || operation.kind === "append") && operation.objective.trim())
       ? this.invalidate(id) : operation.kind === "resume" ? {} : undefined
     if (operation.kind === "resume") this.intents.set(id, intent!)
+    // A command can be waiting for storage while the previous request still
+    // holds a valid tool snapshot. Do not let that tool cancel the new intent.
+    if (intent) this.pendingCommands.set(id, (this.pendingCommands.get(id) ?? 0) + 1)
     return this.serial(id, async () => {
       try {
         if (!await this.owned(id)) throw new Error("Goal session belongs to another location")
@@ -250,6 +255,11 @@ export class GoalController {
           this.records.get(id)?.goal?.status === "active") this.schedule(id)
         throw error
       }
+    }).finally(() => {
+      if (!intent) return
+      const remaining = (this.pendingCommands.get(id) ?? 1) - 1
+      if (remaining) this.pendingCommands.set(id, remaining)
+      else this.pendingCommands.delete(id)
     })
   }
 
@@ -274,7 +284,7 @@ export class GoalController {
     return this.serial(id, async () => {
       if (event.type === "session.deleted") {
         this.cancel(id)
-        await this.save(id, { goal: null })
+        await this.save(id, { goal: null, revision: randomUUID() })
         return
       }
       if (!await this.owned(id)) return
@@ -333,14 +343,28 @@ export class GoalController {
       description: "Set, append, pause, resume, clear or view a persistent goal",
       execute: input => this.command(input.sessionID, input.prompt.text) }))
     await this.ctx.tool.transform(editor => {
-      if (![...this.records.values()].some(r => r.goal?.status === "active")) return
-      editor.add({ name: "update_goal", description: "Mark the active /goal complete only after verifying every requirement.",
-        input: Schema.Struct({ status: Schema.Literal("complete") }), options: { codemode: false },
-        execute: async (_input, context) => {
-          this.invalidate(context.sessionID)
-          return { content: await this.serial(context.sessionID, async () => {
-            if (!await this.owned(context.sessionID)) return "No active goal to complete"
-            return this.mutate(context.sessionID, { kind: "complete" })
+      // OpenCode retains this executable snapshot for the model request.
+      // Accounting checkpoints preserve revisions; goal changes replace them.
+      const revisions = new Map([...this.records].filter(([, r]) => r.goal?.status === "active")
+        .map(([id, r]) => [id, r.revision]))
+      if (!revisions.size) return
+      editor.add({ name: "update_goal",
+        description: "Mark the active /goal complete only after verifying every requirement. Copy revision exactly from <goal_revision> in the goal continuation you verified; never guess it.",
+        input: Schema.Struct({ status: Schema.Literal("complete"), revision: Schema.String }), options: { codemode: false },
+        execute: async (input, context) => {
+          const id = context.sessionID
+          // A later model request may refresh tools before the new objective is
+          // delivered. Only the continuation supplies its completion revision.
+          const current = () => !this.disposed && !this.pendingCommands.has(id) && revisions.has(id) &&
+            input.revision === revisions.get(id) &&
+            this.records.get(id)?.goal?.status === "active" && this.records.get(id)?.revision === revisions.get(id)
+          const stale = "Goal revision is missing or no longer current; completion ignored. Stop this turn without retrying update_goal. Wait for a fresh goal continuation before completing."
+          if (!current()) return { content: stale }
+          this.invalidate(id)
+          return { content: await this.serial(id, async () => {
+            if (!await this.owned(id)) return "No active goal to complete"
+            if (!current()) return stale
+            return this.mutate(id, { kind: "complete" })
           }) }
         } })
     })

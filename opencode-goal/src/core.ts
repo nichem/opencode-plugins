@@ -39,16 +39,17 @@ Before deciding that the goal is achieved, perform a completion audit against th
 - Identify any missing, incomplete, weakly verified, or uncovered requirement.
 - Treat uncertainty as not achieved; do more verification or continue the work.
 
-Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call update_goal with status "complete" so goal accounting is preserved. Report the final elapsed time after update_goal succeeds.
+Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call update_goal with status "complete" and revision copied exactly from <goal_revision> below so goal accounting is preserved. Report the final elapsed time after update_goal succeeds.
 
-Do not call update_goal unless the goal is complete. Do not mark a goal complete merely because you are stopping work.`
+Do not call update_goal unless the goal is complete. Do not mark a goal complete merely because you are stopping work.
+If update_goal rejects an outdated revision, stop this turn without retrying it. A new continuation will deliver the current goal and its revision.`
 
 const RECOVERY_PROMPT = `Stagnation recovery:
 - Your recent continuations stopped without completing the goal or taking concrete action. Do not repeat the same status summary.
 - First, compact the relevant working state for yourself: objective, verified facts, remaining gaps, and the next 1-3 concrete actions.
 - Then immediately execute the first action using tools. If work remains, the response must include tool use rather than only a plan or summary.
 - If the context feels large or repetitive, compact only the facts needed for the next action; do not stop after compacting.
-- Only stop without tool calls after update_goal has succeeded.`
+- Only stop without tool calls after update_goal has succeeded or rejected an outdated revision. After a revision rejection, end this turn and wait for the new goal continuation.`
 
 export const parseGoalCommand = (input: string): GoalCommand => {
   const text = input.trim()
@@ -89,8 +90,8 @@ export const formatGoalSummary = (goal: GoalState, now = Date.now()) =>
 
 export const escapeXml = (value: string) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;")
 
-export const renderContinuationPrompt = ({ objective, timeUsedSeconds, mode = "normal" }: { objective: string; timeUsedSeconds: number; mode?: ContinuationMode }) =>
-  `${PROMPT.replace("{{ objective }}", escapeXml(objective))}${mode === "recovery" ? `\n\n${RECOVERY_PROMPT}` : ""}\n\nTime used pursuing goal: ${formatElapsed(timeUsedSeconds)}.`
+export const renderContinuationPrompt = ({ objective, revision, timeUsedSeconds, mode = "normal" }: { objective: string; revision: string; timeUsedSeconds: number; mode?: ContinuationMode }) =>
+  `${PROMPT.replace("{{ objective }}", escapeXml(objective))}${mode === "recovery" ? `\n\n${RECOVERY_PROMPT}` : ""}\n\n<goal_revision>${escapeXml(revision)}</goal_revision>\n\nTime used pursuing goal: ${formatElapsed(timeUsedSeconds)}.`
 
 export function accounted(goal: GoalState, now = Date.now()): GoalState {
   if (goal.status !== "active" || goal.activeStartedAt === null) return { ...goal }

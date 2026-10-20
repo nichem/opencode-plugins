@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { parse } from "jsonc-parser";
 import { catalog, identify, specifier } from "../catalog.js";
-import { planChanges, readConfigs, writeChanges } from "../config.js";
+import { configPaths, planChanges, readConfigs, writeChanges } from "../config.js";
 import { statuses } from "../status.js";
 const revision = "a".repeat(40), older = "b".repeat(40);
 const configs = () => [
@@ -13,6 +13,47 @@ const configs = () => [
     { kind: "server", path: "opencode.jsonc", original: null, data: {} },
     { kind: "tui", path: "cli.json", original: "{}", data: {} },
 ];
+
+test("server and TUI share config directory overrides; an explicit file only affects server configs", () => {
+    assert.equal(configPaths({}).tui[0], join(homedir(), ".config", "opencode", "cli.json"));
+    const xdg = join(tmpdir(), "config-fixture"), custom = join(tmpdir(), "custom-fixture");
+    assert.equal(configPaths({ XDG_CONFIG_HOME: xdg }).tui[0], join(xdg, "opencode", "cli.json"));
+    const explicit = join(tmpdir(), "explicit-fixture.json");
+    assert.deepEqual(configPaths({ XDG_CONFIG_HOME: xdg, OPENCODE_CONFIG_DIR: custom, OPENCODE_CONFIG: explicit }), {
+        server: [join(custom, "opencode.json"), join(custom, "opencode.jsonc"), resolve(explicit)],
+        tui: [join(custom, "cli.json")],
+    });
+});
+
+test("install and uninstall use the custom TUI config and preserve the default directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opencode-installer-custom-"));
+    try {
+        const xdg = join(root, "xdg"), custom = join(root, "custom");
+        const defaultTui = join(xdg, "opencode", "cli.json");
+        const original = '{"plugins":["foreign-plugin"],"theme":"fixture"}';
+        await mkdir(join(xdg, "opencode"), { recursive: true });
+        await mkdir(custom);
+        await writeFile(defaultTui, original);
+        await writeFile(join(custom, "cli.json"), original);
+        const paths = configPaths({ XDG_CONFIG_HOME: xdg, OPENCODE_CONFIG_DIR: custom });
+        const selected = [catalog[1], catalog[2]];
+        const initial = await readConfigs(paths);
+        await writeChanges(planChanges(initial, selected, "install", revision), join(root, "backups"));
+        const installed = await readConfigs(paths);
+        assert.equal(statuses(installed, revision)[1].state, "current");
+        assert.deepEqual(installed.find(c => c.kind === "tui").data.plugins, [
+            "foreign-plugin", specifier("opencode-goal", revision), specifier("opencode-message-delete", revision),
+        ]);
+        await writeChanges(planChanges(installed, selected, "remove"), join(root, "backups"));
+        const removed = await readConfigs(paths);
+        assert.deepEqual(removed.find(c => c.kind === "tui").data, JSON.parse(original));
+        assert.equal(statuses(removed, revision)[1].state, "absent");
+        assert.equal(await readFile(defaultTui, "utf8"), original);
+    } finally {
+        assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
+        await rm(root, { recursive: true, force: true });
+    }
+});
 
 test("Goal installation adds both entrances and does not create duplicate server configs", () => {
     const changes = planChanges(configs(), [catalog[1]], "install", revision);

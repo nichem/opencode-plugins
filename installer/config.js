@@ -6,9 +6,8 @@ import { parse, modify, applyEdits } from "jsonc-parser";
 import { identify, specifier } from "./catalog.js";
 
 export function configPaths(env = process.env) {
-    const global = join(env.XDG_CONFIG_HOME || join(homedir(), ".config"), "opencode");
-    const server = env.OPENCODE_CONFIG_DIR || global;
-    return { server: [...new Set([join(server, "opencode.json"), join(server, "opencode.jsonc"), ...(env.OPENCODE_CONFIG ? [resolve(env.OPENCODE_CONFIG)] : [])])], tui: [join(global, "cli.json")] };
+    const directory = env.OPENCODE_CONFIG_DIR || join(env.XDG_CONFIG_HOME || join(homedir(), ".config"), "opencode");
+    return { server: [...new Set([join(directory, "opencode.json"), join(directory, "opencode.jsonc"), ...(env.OPENCODE_CONFIG ? [resolve(env.OPENCODE_CONFIG)] : [])])], tui: [join(directory, "cli.json")] };
 }
 async function text(path) { try { return await readFile(path, "utf8"); } catch (e) { if (e.code === "ENOENT") return null; throw e; } }
 export async function readConfigs(paths = configPaths()) {
