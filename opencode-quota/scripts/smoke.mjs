@@ -55,7 +55,8 @@ async function api(path, body) {
 }
 try {
   let plugins = []
-  for (let i = 0; i < 100; i++) {
+  const startupDeadline = Date.now() + (process.argv[3] ? 300000 : 20000)
+  while (Date.now() < startupDeadline) {
     try {
       plugins = await api("/api/plugin")
       if (["opencode-quota", "quota-test-provider"].every(id => plugins.some(plugin => plugin.id === id && plugin.state.status === "active"))) break

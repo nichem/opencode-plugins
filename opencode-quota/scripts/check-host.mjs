@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { readFileSync } from "node:fs"
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import * as module from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
@@ -10,7 +10,8 @@ import { promisify } from "node:util"
 import { Host } from "@opencode/plugin/host"
 
 const directory = fileURLToPath(new URL("..", import.meta.url))
-const root = await mkdtemp(join(tmpdir(), "opencode-quota-host-"))
+const temporary = await realpath(tmpdir())
+const root = await mkdtemp(join(temporary, "opencode-quota-host-"))
 const run = promisify(execFile)
 const install = process.argv.includes("--install")
 let hook
@@ -84,6 +85,6 @@ try {
     : "PASS: OpenCode 2.1.0 host resolves and loads the packaged server and precompiled TUI from node_modules")
 } finally {
   hook?.deregister()
-  assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep))
+  assert.ok(resolve(root).startsWith(resolve(temporary) + sep))
   await rm(root, { recursive: true, force: true })
 }
