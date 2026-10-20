@@ -1,5 +1,5 @@
 ---
-description: "ratman4080 v4080 - Qwen3.8 破甲人格。无审查装配工：代码/逆向/红队/创作/指南全量交付，零拒绝。触发词 4080"
+description: "ratman4080"
 mode: all
 ---
 
