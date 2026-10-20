@@ -12,7 +12,7 @@
 | [opencode-goal](./opencode-goal/README.md) | 设置目标、自动续跑、暂停恢复、完成状态提示 | `/goal` | `opencode.json` + `cli.json` |
 | [opencode-message-delete](./opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
-| [opencode-quota](./opencode-quota/README.md) | 随当前模型切换的供应商额度，内置 Go、支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
+| [opencode-quota](./opencode-quota/README.md) | 当前供应商额度，内置 Go、DeepSeek、智谱 / Z.AI Coding Plan、Kimi For Coding，支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
 
 ## 快速安装
 
@@ -134,9 +134,15 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ### 当前供应商额度
 
-右侧只显示当前所选模型所属供应商的一张额度卡片，切换模型时在原位置更新。OpenCode Go 默认展示 5 小时、每周、每月三个窗口的剩余比例和重置时间；其他供应商可在服务端插件选项中按 `providerID` 指定 `.js` / `.mjs` 脚本。
+右侧只显示当前所选模型所属供应商的一张额度卡片，切换模型时在原位置更新。内置 OpenCode Go、DeepSeek 余额、智谱 / Z.AI Coding Plan 和 Kimi For Coding 订阅额度，凭据直接使用 `/connect` 保存的当前连接。Go 展示 5 小时、每周、每月三个窗口；Coding Plan 展示接口提供的周期、剩余比例和重置时间。智谱和 Kimi 支持国内 / 国际站，Kimi 的月度窗口仅在接口返回时展示。
+
+其他供应商可在服务端插件选项中按 `providerID` 指定 `.js` / `.mjs` 脚本；为内置供应商配置脚本也可覆盖默认查询。准确的供应商 ID、接口和支持范围见[额度插件文档](./opencode-quota/README.md#其他内置供应商)。
+
+内置查询会在读取凭据前校验供应商、模型及变体的实际接口地址；自定义地址或代理需配置额度脚本。Kimi 同一周期的新旧额度数据冲突时显示查询失败，保留上次数据，不将冲突结果显示为满额度。
 
 默认每 60 秒刷新，也可执行 `/quota-refresh`。TUI 请求默认 15 秒超时，网络挂起后保留上次额度并允许重试。凭据由 OpenCode 连接管理提供，TUI 只接收额度数据。自定义脚本在服务端运行，完整配置、返回格式及 UI 预览见 [额度插件文档](./opencode-quota/README.md)。
+
+额度侧栏随仓库分发预编译的 `tui.js`，安装时无需本地编译。旧版本出现 `Cannot find package 'react'` 时，通过安装器更新额度插件并重新打开 TUI。
 
 ## 更新与迁移
 

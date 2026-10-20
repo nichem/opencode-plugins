@@ -66,6 +66,11 @@ try {
     assert.equal(plugins.find(plugin => plugin.id === id)?.state.status, "active", `${id} did not activate`)
   const query = modelID => api("/api/rpc/opencode-quota/query", { input: { providerID: "quota-fixture", modelID } })
   await api("/api/integration/quota-fixture/connect/key", { key: "quota-smoke-fake-key-one" })
+  const blocked = await api("/api/rpc/opencode-quota/query", {
+    input: { providerID: "deepseek", modelID: "quota-endpoint-fixture" },
+  })
+  assert.equal(blocked.status, "unconfigured")
+  assert.match(blocked.message, /额度脚本/)
   const one = await query("one")
   assert.equal(one.status, "ready", JSON.stringify(one))
   assert.equal(one.items[0].used, 18)
@@ -82,7 +87,7 @@ try {
   assert.equal(timeout.message, "额度查询超时")
   await writeFile(script, source)
   assert.equal((await query("one")).status, "ready")
-  console.log("PASS: native OpenCode loaded the plugin, resolved saved fixture credentials, queried scripts for two models, redacted secrets, and recovered after worker timeout")
+  console.log("PASS: native OpenCode loaded the plugin, blocked built-in queries for a proxy model, resolved saved fixture credentials, queried scripts for two models, redacted secrets, and recovered after worker timeout")
 } catch (error) {
   await writeFile(join(root, "server.log"), logs.replace(/server password \S+/g, "server password [REDACTED]"))
   throw error

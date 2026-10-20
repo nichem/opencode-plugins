@@ -81,6 +81,98 @@ test("unconfigured providers do not read credentials or make requests", async ()
   service.close()
 })
 
+test("built-in provider IDs resolve only their own connection and route to the correct official endpoint", async t => {
+  const fixtures = [
+    ["deepseek", "https://api.deepseek.com/user/balance", { balance_infos: [{ currency: "CNY", total_balance: "1.00" }] }],
+    ["zhipuai-coding-plan", "https://open.bigmodel.cn/api/monitor/usage/quota/limit", { limits: [{ type: "TOKENS_LIMIT", percentage: 25 }] }],
+    ["zai-coding-plan", "https://api.z.ai/api/monitor/usage/quota/limit", { limits: [{ type: "CREDIT_LIMIT", percentage: 25 }] }],
+    ["kimi-for-coding", "https://api.kimi.com/coding/v1/usages", { usages: { limit_5h: { used_ratio: 0.25 } } }],
+    ["kimi-code-plan-cn", "https://api.kimi.com/coding/v1/usages", { usages: { limit_5h: { used_ratio: 0.25 } } }],
+    ["kimi-code-plan-global", "https://api.kimi.ai/coding/v1/usages", { usages: { limit_5h: { used_ratio: 0.25 } } }],
+  ] as const
+  let expected: readonly [string, string, unknown]
+  const calls: string[] = []
+  const fetch = t.mock.method(globalThis, "fetch", async (url: string) => {
+    assert.equal(url, expected[1])
+    return Response.json(expected[2])
+  })
+  const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, {
+    resolve: async id => { calls.push(id); return credential },
+  })
+  try {
+    for (const fixture of fixtures) {
+      expected = fixture
+      const result = await service.query({ providerID: fixture[0], modelID: "fixture-model" }, new AbortController().signal)
+      assert.equal(result.status, "ready", result.message)
+      assert.equal(result.providerID, fixture[0])
+      assert.equal(result.modelID, "fixture-model")
+      assert.ok(!JSON.stringify(result).includes(credential.key))
+    }
+    assert.deepEqual(calls, fixtures.map(([id]) => id))
+    assert.equal(fetch.mock.callCount(), fixtures.length)
+    for (const providerID of ["zhipuai", "zai", "moonshotai", "moonshotai-cn", "not-deepseek"])
+      assert.equal((await service.query({ providerID, modelID: "one" }, new AbortController().signal)).status, "unconfigured")
+    assert.equal(calls.length, fixtures.length)
+  } finally { service.close() }
+})
+
+test("missing built-in credentials produce a connect hint without sending network requests", async t => {
+  t.mock.method(globalThis, "fetch", async () => assert.fail("Unexpected network request"))
+  const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, { resolve: async () => undefined })
+  try {
+    for (const providerID of ["opencode-go", "deepseek", "zhipuai-coding-plan", "zai-coding-plan", "kimi-for-coding", "kimi-code-plan-cn", "kimi-code-plan-global"]) {
+      const result = await service.query({ providerID, modelID: "one" }, new AbortController().signal)
+      assert.equal(result.status, "error")
+      assert.match(result.message!, /\/connect/)
+      assert.ok(result.message!.includes(providerID === "deepseek" ? "DeepSeek" : providerID.startsWith("kimi") ? "Kimi" : providerID === "opencode-go" ? "Go" : "Coding Plan"))
+    }
+  } finally { service.close() }
+})
+
+test("Kimi accepts a saved OAuth access token without refreshing it or sharing it with other built-ins", async t => {
+  const oauth = { type: "oauth" as const, access: "fixture-oauth-access", refresh: "fixture-oauth-refresh", expires: Date.now() + 60000 }
+  const fetch = t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, "https://api.kimi.com/coding/v1/usages")
+    assert.equal(new Headers(init.headers).get("authorization"), `Bearer ${oauth.access}`)
+    return Response.json({ usages: { limit_5h: { used_ratio: 0.25 } } })
+  })
+  const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, { resolve: async () => oauth })
+  try {
+    assert.equal((await service.query({ providerID: "kimi-for-coding", modelID: "one" }, new AbortController().signal)).status, "ready")
+    for (const providerID of ["opencode-go", "deepseek", "zhipuai-coding-plan", "zai-coding-plan"])
+      assert.equal((await service.query({ providerID, modelID: "one" }, new AbortController().signal)).status, "error")
+    assert.equal(fetch.mock.callCount(), 1)
+  } finally { service.close() }
+})
+
+test("contradictory Kimi pools return an explicit error instead of a fresh full-quota result", async t => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    usages: { limit_7d: { used_ratio: 0 } }, usage: { limit: "100", used: "100" },
+  }))
+  const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, { resolve: async () => credential })
+  try {
+    const result = await service.query({ providerID: "kimi-for-coding", modelID: "one" }, new AbortController().signal)
+    assert.equal(result.status, "error")
+    assert.match(result.message!, /新旧数据不一致/)
+    assert.deepEqual(result.items, [])
+    assert.equal(result.updatedAt, undefined)
+  } finally { service.close() }
+})
+
+test("custom scripts still override built-in adapters and redact OAuth secrets", async t => {
+  t.mock.method(globalThis, "fetch", async () => assert.fail("Built-in adapter must not run when a script is configured"))
+  const oauth = { type: "oauth" as const, access: "fixture-oauth-access", refresh: "fixture-oauth-refresh", expires: Date.now() + 60000 }
+  await scriptFixture(`export default ({ credential }) => ({ title: 'override', items: [{ label: credential.access, value: credential.refresh }] })`, async path => {
+    const service = new QuotaService({ timeoutMs: 5000, providers: new Map([["kimi-for-coding", path]]) }, { resolve: async () => oauth })
+    try {
+      const result = await service.query({ providerID: "kimi-for-coding", modelID: "one" }, new AbortController().signal)
+      assert.equal(result.status, "ready")
+      assert.equal(result.title, "override")
+      assert.deepEqual(result.items, [{ label: "[已隐藏]", value: "[已隐藏]" }])
+    } finally { service.close() }
+  })
+})
+
 test("scripts get the current model and only that provider's connection; returned secrets are redacted", async () => {
   await scriptFixture(`export default ({ providerID, modelID, credential }) => ({ title: providerID, items: [
     { label: modelID, value: credential.key }, { label: 'balance', used: 5, limit: 100 }

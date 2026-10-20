@@ -1,11 +1,12 @@
 import type { Credential } from "@opencode/plugin"
-import { normalize, QuotaError, type QuotaResult, type Selection } from "./data.ts"
-import { queryGo } from "./go.ts"
+import { builtins, QuotaEndpointError } from "./builtins.ts"
+import { normalize, QuotaError, type QuotaData, type QuotaResult, type Selection } from "./data.ts"
 import type { Options } from "./options.ts"
 import { runScript } from "./script.ts"
 
 export type Credentials = {
-  resolve(providerID: string): Promise<Credential.Value | undefined>
+  // A model ID requires endpoint validation before resolving a built-in credential.
+  resolve(providerID: string, modelID?: string): Promise<Credential.Value | undefined>
 }
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -30,18 +31,22 @@ export class QuotaService {
 
   async query(selection: Selection, requestSignal: AbortSignal): Promise<QuotaResult> {
     const script = this.config.providers.get(selection.providerID)
-    if (!script && selection.providerID !== "opencode-go")
+    const builtin = builtins.get(selection.providerID)
+    if (!script && !builtin)
       return { ...selection, status: "unconfigured", items: [], message: "此供应商尚未配置额度脚本" }
     const signal = AbortSignal.any([requestSignal, this.closed.signal, AbortSignal.timeout(this.config.timeoutMs)])
     try {
       signal.throwIfAborted()
-      const credential = await abortable(this.credentials.resolve(selection.providerID), signal)
+      const credential = await abortable(this.credentials.resolve(selection.providerID, script ? undefined : selection.modelID), signal)
       signal.throwIfAborted()
-      const data = script
-        ? normalize(await runScript(script, selection, credential, signal))
-        : credential?.type === "key" && credential.key.trim()
-          ? await queryGo(credential.key, signal)
-          : (() => { throw new QuotaError("请先通过 /connect 连接 OpenCode Go") })()
+      let data: QuotaData
+      if (script) data = normalize(await runScript(script, selection, credential, signal))
+      else {
+        const key = credential?.type === "key" ? credential.key
+          : builtin?.oauth && credential?.type === "oauth" ? credential.access : undefined
+        if (!builtin || !key?.trim()) throw new QuotaError(`请先通过 /connect 连接 ${builtin?.name ?? selection.providerID}`)
+        data = await builtin.query(key, signal)
+      }
       // Protect against scripts accidentally returning raw connection secrets.
       const secrets = credential?.type === "key" ? [credential.key]
         : credential?.type === "oauth" ? [credential.access, credential.refresh] : []
@@ -55,7 +60,8 @@ export class QuotaService {
         })), status: "ready", updatedAt: Date.now() }
     } catch (error) {
       if (requestSignal.aborted || this.closed.signal.aborted) throw error
-      return { ...selection, status: "error", items: [], message: signal.aborted ? "额度查询超时"
+      return { ...selection, status: !signal.aborted && error instanceof QuotaEndpointError ? "unconfigured" : "error",
+        items: [], message: signal.aborted ? "额度查询超时"
         : error instanceof QuotaError ? error.message : "额度查询失败，请检查供应商连接" }
     }
   }
