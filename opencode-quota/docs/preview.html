@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>OpenCode 额度面板 · 静态预览</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1280px; height: 800px; background: #101011; color: #dededf; }
+body { font: 15px/1.65 Consolas, "Microsoft YaHei", monospace; padding: 24px; }
+.terminal { height: 752px; border: 1px solid #343435; background: #161617; overflow: hidden; }
+.titlebar { height: 43px; padding: 9px 18px; background: #202021; color: #818184; font-size: 12px; display: flex; justify-content: space-between; border-bottom: 1px solid #303032; }
+.brand { color: #dbdbdc; font-weight: bold; letter-spacing: 1px; }
+.body { display: flex; height: 662px; }
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 30px 32px 16px; }
+.session-title { color: #eeeeef; font-size: 16px; font-weight: bold; }
+.path { color: #747477; font-size: 12px; margin: 6px 0 40px; }
+.question { border-left: 3px solid #b9a4eb; background: #212123; padding: 15px 20px; color: #eeeeef; margin-bottom: 30px; }
+.answer { border-left: 3px solid #e5a56b; padding: 0 0 0 20px; }
+.answer .label { font-size: 12px; color: #e5a56b; margin-bottom: 12px; }
+p { margin: 0 0 14px; }
+.dim { color: #858589; }
+.prompt { margin-top: auto; background: #222224; border-left: 3px solid #e5a56b; padding: 14px 18px 10px; }
+.cursor { color: #f1f1f2; }
+.model { color: #96969a; font-size: 12px; margin-top: 19px; display: flex; gap: 9px; }
+.model .agent { color: #e5a56b; }
+.input-help { font-size: 11px; color: #77777b; display: flex; justify-content: space-between; margin-top: 10px; padding: 0 3px; }
+aside { width: 296px; background: #1b1b1d; border-left: 1px solid #2c2c2e; padding: 26px 23px; }
+.section { margin-bottom: 27px; }
+.heading { font-weight: bold; color: #e6e6e7; margin-bottom: 9px; font-size: 14px; }
+.small { font-size: 12px; }
+.rule { border-top: 1px solid #333336; margin: 22px 0; }
+.quota-title { display: flex; justify-content: space-between; align-items: center; }
+.fresh { color: #8bad8b; font-size: 10px; font-weight: normal; }
+.provider { font-size: 14px; color: #e5a56b; }
+.selected-model { font-size: 11px; color: #77777d; margin-top: 2px; }
+.metric { margin-top: 20px; }
+.metric-line { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+.remaining { color: #b2d1b0; }
+.remaining.warn { color: #e0ba82; }
+.meter { display: flex; gap: 3px; height: 7px; margin: 8px 0 6px; }
+.meter i { flex: 1; background: #343437; }
+.meter i.on { background: #91b78e; }
+.meter.warn i.on { background: #c9a46d; }
+.reset { color: #77777d; font-size: 10px; }
+.quota-footer { color: #727278; font-size: 10px; margin-top: 20px; display: flex; justify-content: space-between; }
+.quota-footer span:last-child { color: #a1a1a5; }
+.mcp { display: flex; gap: 8px; color: #8bad8b; font-size: 12px; }
+footer { height: 46px; padding: 10px 18px; border-top: 1px solid #2c2c2e; color: #77777d; display: flex; justify-content: space-between; font-size: 11px; }
+footer .hint { color: #b7a3df; }
+</style>
+<div class="terminal">
+  <div class="titlebar"><span><span class="brand">opencode</span> &nbsp; ~/project</span><span>界面预览 · 额度均为示例数据</span></div>
+  <div class="body">
+    <main>
+      <div class="session-title">供应商额度面板</div>
+      <div class="path">~/project &nbsp; · &nbsp; 当前会话</div>
+      <div class="question">右侧只显示当前模型所属供应商的额度。</div>
+      <div class="answer">
+        <div class="label">Build</div>
+        <p>额度面板跟随你选择的模型。</p>
+        <p>当前使用 OpenCode Go，右侧显示三个额度周期，<br>包括剩余比例和下次重置时间。</p>
+        <p class="dim">切换到其他供应商的模型时，<br>同一个位置会显示该供应商脚本返回的额度。</p>
+      </div>
+      <div class="prompt">
+        <div class="cursor">┃</div>
+        <div class="model"><span class="agent">Build</span><span>·</span><span>Kimi K2.6</span><span>·</span><span>OpenCode Go</span></div>
+      </div>
+      <div class="input-help"><span>tab 切换 agent &nbsp; ctrl+p 命令</span><span>enter 发送</span></div>
+    </main>
+    <aside>
+      <div class="section">
+        <div class="heading">上下文</div>
+        <div class="small">24,800 tokens</div>
+        <div class="small dim">12% · 200k context</div>
+      </div>
+      <div class="rule"></div>
+      <div class="quota">
+        <div class="heading quota-title"><span>额度</span><span class="fresh">● 已更新</span></div>
+        <div class="provider">OpenCode Go</div>
+        <div class="selected-model">Kimi K2.6</div>
+        <div class="metric">
+          <div class="metric-line"><span>5 小时</span><span class="remaining">剩余 82%</span></div>
+          <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+          <div class="reset">3 小时 42 分后重置</div>
+        </div>
+        <div class="metric">
+          <div class="metric-line"><span>每周</span><span class="remaining">剩余 68%</span></div>
+          <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="reset">4 天 8 小时后重置</div>
+        </div>
+        <div class="metric">
+          <div class="metric-line"><span>每月</span><span class="remaining warn">剩余 36%</span></div>
+          <div class="meter warn"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="reset">12 天后重置</div>
+        </div>
+        <div class="quota-footer"><span>更新于 17:30:24</span><span>/quota-refresh</span></div>
+      </div>
+      <div class="rule"></div>
+      <div class="section"><div class="heading">MCP</div><div class="mcp">● <span>已连接</span></div></div>
+    </aside>
+  </div>
+  <footer><span class="hint">切换模型 → 当前供应商的额度在原位置更新</span><span>单面板 · 内置 Go · 自定义 JS</span></footer>
+</div>
+</html>

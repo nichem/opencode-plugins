@@ -4,6 +4,7 @@ export const catalog = [
     { id: "opencode-goal", title: "目标管理与自动续跑", targets: ["server", "tui"] },
     { id: "opencode-message-delete", title: "删除末尾 AI 消息", targets: ["tui"] },
     { id: "opencode-agents", title: "内置 Markdown agent", targets: ["server"] },
+    { id: "opencode-quota", title: "当前供应商额度侧栏", targets: ["server", "tui"] },
 ];
 export const specifier = (id, revision) => `git+${repo}#${revision}::path:${id}`;
 export function identify(entry) {

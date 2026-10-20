@@ -90,7 +90,7 @@ test("status distinguishes latest, update, absent, incomplete and failed checks"
         [older, new Map([["opencode-message-delete", "old"]])],
     ]);
     const state = statuses(cfg, revision, `opencode-providers ${revision.slice(0,7)} ${specifier("opencode-providers", "main")}`, trees);
-    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent"]);
+    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent"]);
     assert.equal(statuses(cfg, undefined)[0].state, "unknown");
     assert.equal(statuses(cfg, revision)[0].state, "repair");
 });
@@ -99,6 +99,21 @@ test("only this GitHub repository's known plugin subpaths are managed", () => {
     assert.equal(identify("opencode-goal"), undefined);
     assert.equal(identify("git+https://github.com/other/opencode-plugins.git#main::path:opencode-goal"), undefined);
     assert.equal(identify("github:nichem/opencode-plugins#main::path:opencode-goal").id, "opencode-goal");
+});
+
+test("quota installs both entrances, preserves script options on update and removes only its entries", () => {
+    const quota = catalog.find(plugin => plugin.id === "opencode-quota");
+    const initial = configs();
+    const installed = planChanges(initial, [quota], "install", revision);
+    assert.deepEqual(installed.map(config => config.path), ["opencode.json", "cli.json"]);
+    for (const entry of installed) assert.deepEqual(parse(entry.next).plugins, [specifier(quota.id, revision)]);
+    const config = { kind: "server", path: "opencode.jsonc", original: "", data: {} };
+    config.data = { plugins: [{ package: specifier(quota.id, older), options: { providers: { fixture: { script: "./quota.mjs" } } } }, "other"] };
+    config.original = JSON.stringify(config.data);
+    const updated = planChanges([config], [quota], "install", revision)[0];
+    assert.deepEqual(parse(updated.next).plugins[0].options, config.data.plugins[0].options);
+    const removed = planChanges([config], [quota], "remove")[0];
+    assert.deepEqual(parse(removed.next).plugins, ["other"]);
 });
 
 test("disk changes make backups, preserve concurrent edits and roll back earlier files", async () => {

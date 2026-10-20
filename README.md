@@ -1,8 +1,8 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标，以及逐条删除末尾 AI 消息。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息，以及显示当前供应商额度。
 
-目前针对 **OpenCode 2.0.27** 验证。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
+原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏针对 **OpenCode 2.1.0** 适配。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
 
 ## 插件一览
 
@@ -12,6 +12,7 @@
 | [opencode-goal](./opencode-goal/README.md) | 设置目标、自动续跑、暂停恢复、完成状态提示 | `/goal` | `opencode.json` + `cli.json` |
 | [opencode-message-delete](./opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
+| [opencode-quota](./opencode-quota/README.md) | 随当前模型切换的供应商额度，内置 Go、支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
 
 ## 快速安装
 
@@ -31,11 +32,11 @@ npx github:nichem/opencode-plugins
 - **卸载**：多选已配置的插件，再确认卸载；确认默认选择否。仅移除配置，保留账号、凭据、缓存和插件数据。
 - **返回 / 退出**：子菜单按 `Esc` 返回，主菜单选择退出，或按 `Ctrl+C`。
 
-安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal 自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
+安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal 和额度侧栏自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
 
 版本按各插件整个目录的 Git tree hash 判断：比较已安装提交与 `main` 最新提交中的对应目录，内容相同就视为最新版。其他插件、根目录文档或安装器的修改不会触发该插件的更新提示；插件目录内的文档和测试变化仍算更新，改动撤销后内容相同也不会提示更新。安装时仍固定到本次检查的完整提交 SHA；后续更新请重新运行上面的命令。
 
-安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的不同分支、标签或地址写法不会互借版本。Goal 的两个入口分别比较，全部一致才显示最新版。通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
+安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的不同分支、标签或地址写法不会互借版本。Goal 和额度侧栏均分别比较两个入口，全部一致才显示最新版。通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
 
 改动前备份到 `~/.local/state/opencode-plugins/backups/`（设置 `XDG_STATE_HOME` 时跟随该目录），完成后尝试 `opencode reload`。请重新打开 OpenCode 终端界面，由 OpenCode 下载并加载插件。
 
@@ -47,33 +48,35 @@ npx github:nichem/opencode-plugins
 
 ### 服务端：`opencode.json`
 
-负责供应商接入、预设 agent 和目标执行；使用 `opencode.jsonc` 也可以，无需同时维护两份。
+负责供应商接入、预设 agent、目标执行和额度查询；使用 `opencode.jsonc` 也可以，无需同时维护两份。
 
 ```json
 {
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota"
   ]
 }
 ```
 
 ### 终端界面：`cli.json`
 
-负责 Goal 的状态通知和删除消息命令。
+负责 Goal 的状态通知、删除消息命令和额度侧栏显示。
 
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-message-delete"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-message-delete",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota"
   ]
 }
 ```
 
-Goal 在两个文件中使用同一地址，分别加载服务端和界面入口。仅配置服务端可以执行目标，但缺少界面状态通知。
+Goal 和额度侧栏在两个文件中使用各自相同的地址，分别加载服务端和界面入口。Goal 仅配置服务端可以执行目标，但缺少界面状态通知；额度侧栏需要两个入口共同工作。
 
 配置完成后执行 `opencode reload`，并重新打开终端界面。
 
@@ -128,6 +131,12 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 每次删除一条内部 AI 消息，包括其中的正文、思考及工具记录。可重复执行，遇到用户消息或其他非 AI 消息就停止；已修改的文件保留。AI 一轮回复可能包含多条消息，因此一次操作不一定删除整轮。
 
 生成中无法删除。使用 Goal 自动续跑时先 `/goal pause`。**删除成功后不能用 `/redo` 恢复**；这也不是原 message-editor 的按片段编辑功能。详见 [删除插件文档](./opencode-message-delete/README.md)。
+
+### 当前供应商额度
+
+右侧只显示当前所选模型所属供应商的一张额度卡片，切换模型时在原位置更新。OpenCode Go 默认展示 5 小时、每周、每月三个窗口的剩余比例和重置时间；其他供应商可在服务端插件选项中按 `providerID` 指定 `.js` / `.mjs` 脚本。
+
+默认每 60 秒刷新，也可执行 `/quota-refresh`。TUI 请求默认 15 秒超时，网络挂起后保留上次额度并允许重试。凭据由 OpenCode 连接管理提供，TUI 只接收额度数据。自定义脚本在服务端运行，完整配置、返回格式及 UI 预览见 [额度插件文档](./opencode-quota/README.md)。
 
 ## 更新与迁移
 
