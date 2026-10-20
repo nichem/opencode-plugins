@@ -144,6 +144,8 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 额度侧栏随仓库分发预编译的 `tui.js`，安装时无需本地编译。旧版本出现 `Cannot find package 'react'` 时，通过安装器更新额度插件并重新打开 TUI。
 
+`a106134` 版本若出现 `NpmInstallFailedError`，同样需要更新额度插件；已调整开发构建命令，避免 Git 安装触发预构建。
+
 ## 更新与迁移
 
 通过交互式安装器安装的插件，重新执行 `npx github:nichem/opencode-plugins`，选择“安装 / 更新”。安装器使用固定提交地址，不能靠 `opencode plugin update` 自动跟随 `main`。

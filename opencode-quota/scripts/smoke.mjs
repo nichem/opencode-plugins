@@ -12,7 +12,8 @@ if (!executable) throw new Error("Pass the OpenCode 2.1.x executable path")
 const root = await mkdtemp(join(tmpdir(), "opencode-quota-v2-"))
 const project = join(root, "project"), config = join(root, "config", "opencode")
 for (const directory of [project, config, join(root, "home")]) await mkdir(directory, { recursive: true })
-const plugin = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/")
+const directory = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/")
+const plugin = process.argv[3] ?? directory
 const script = join(root, "quota.mjs")
 const source = `export default ({ modelID, credential }) => ({ title: 'Smoke Quota', items: [
   { label: modelID, used: modelID === 'one' ? 18 : 64, limit: 100, unit: '%' },
@@ -21,7 +22,7 @@ const source = `export default ({ modelID, credential }) => ({ title: 'Smoke Quo
 ] })`
 await writeFile(script, source)
 const configValue = { plugins: [{ package: plugin, options: { timeoutMs: 1000,
-  providers: { "quota-fixture": { script } } } }, `${plugin}/tests/mock-provider`] }
+  providers: { "quota-fixture": { script } } } }, `${directory}/tests/mock-provider`] }
 await writeFile(join(config, "opencode.json"), JSON.stringify(configValue))
 await writeFile(join(project, "opencode.json"), JSON.stringify(configValue))
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key) && !/^OPENCODE|^QODER/i.test(key)))

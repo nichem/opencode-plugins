@@ -26,6 +26,8 @@ npx github:nichem/opencode-plugins
 
 终端入口使用仓库内预编译的 `tui.js`，安装时无需本地编译。OpenTUI 会跳过 `node_modules` 中的 TSX 转换，直接分发 `tui.tsx` 会导致 `Cannot find package 'react'` 加载错误；遇到此错误请通过安装器更新额度插件，再重新打开 TUI。
 
+若 `a106134` 版本显示 `NpmInstallFailedError`，请更新额度插件。该版本的 `build` 脚本触发了 Git 依赖的预构建流程；构建命令现已改为 `build:tui`，安装只使用预编译产物。
+
 ## 内置 OpenCode Go
 
 通过 `/connect` 连接 OpenCode Go，选择它的模型。插件通过 OpenCode 连接管理获取当前激活账号的 Key，调用固定地址：
@@ -150,13 +152,18 @@ export default async function quota({ providerID, modelID, credential, signal })
 
 ```powershell
 npm ci
-npm run build
+npm run build:tui
 npm run check
 npm test
 npm run check:host
+npm run check:install
 node scripts/smoke.mjs 'C:/path/to/opencode.exe'
 ```
 
-修改 `tui.tsx` 后执行 `npm run build`，并将生成的 `tui.js` 一起提交；`npm run check` 会检查产物是否与源码一致。构建仅转换本插件的 JSX，Solid/OpenTUI 仍由宿主运行时提供。
+修改 `tui.tsx` 后执行 `npm run build:tui`，并将生成的 `tui.js` 一起提交；`npm run check` 会检查产物是否与源码一致。构建仅转换本插件的 JSX，Solid/OpenTUI 仍由宿主运行时提供。不要将命令命名为 `build` 或增加安装生命周期脚本，以免 npm 为 Git 依赖启动预构建。
 
 单元测试使用 Node.js 24+，覆盖内置供应商的新旧 API 数据、Kimi 数据冲突、国内 / 国际站请求隔离、供应商 / 模型 / 变体地址校验、代理地址在读取凭据前被拦截、脚本覆盖内置查询、脚本错误与超时、凭据脱敏、取消、快速切换模型、保留旧数据和账号失效。新增供应商接口使用模拟响应验证，不将此视为真实账号联调。host 检查将分发文件复制到临时 `node_modules`，不带开发用 `tsconfig.json`，并实际加载服务端与预编译 TUI 入口。原生 smoke 使用临时配置、数据库和人工构造的供应商/Key，检查实际 OpenCode 2.1.0 的 RPC、代理模型拦截、连接读取及 Worker 行为，不调用付费模型，不读取用户 agent 文档或真实配置。OpenTUI 的独立运行环境另需满足其 Node/Bun 引擎要求；正常使用由 OpenCode 内置运行时负责。
+
+`check:install` 另用分发文件创建临时 Git 子目录包，通过 OpenCode 2.1.0 的 npm 安装器从空缓存安装，再加载两个入口。它会下载运行依赖，不连接开发目录的 `node_modules`，不修改用户配置。
+
+原生 smoke 可在可执行文件路径后追加本仓库的 GitHub 固定提交安装地址，以验证实际 Git 下载、依赖安装和服务端加载；省略时使用工作区代码。人工供应商和 Key 始终来自临时测试配置。

@@ -22,10 +22,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "node scripts/build-tui.mjs",
+    "build:tui": "node scripts/build-tui.mjs",
     "check": "tsc --noEmit && node scripts/build-tui.mjs --check && node --check src/script-worker.js",
     "test": "node --test tests/*.test.ts",
-    "check:host": "node scripts/check-host.mjs"
+    "check:host": "node scripts/check-host.mjs",
+    "check:install": "node scripts/check-host.mjs --install"
   },
   "dependencies": {
     "@opencode/plugin": "2.1.0",
