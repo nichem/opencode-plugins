@@ -14,8 +14,9 @@ function children(node) {
     // Solid's conditional siblings leave invisible LayoutSlotRenderable nodes.
     // They do not contribute to the visible header/body shape.
     if (node instanceof Renderable && node.isDestroyed) return [];
+    // Solid can assign an undefined ID to anonymous native timeline rows.
     return node.getChildren().filter(child => child.visible && !(child instanceof Renderable && child.isDestroyed)
-        && !child.id.startsWith(prefix));
+        && !(typeof child.id === "string" && child.id.startsWith(prefix)));
 }
 
 /** @param {import('@opentui/core').BaseRenderable} node
@@ -76,7 +77,8 @@ export function findBlocks(root, messageIDs, transcript) {
     for (const scroll of scrolls) {
         if (!(scroll instanceof ScrollBoxRenderable)) continue;
         const rows = children(scroll.content);
-        if (!transcript && !rows.some(row => messageIDs.has(row.id.startsWith("session-part:") ? row.id.split(":")[1] : row.id))) continue;
+        if (!transcript && !rows.some(row => typeof row.id === "string"
+            && messageIDs.has(row.id.startsWith("session-part:") ? row.id.split(":")[1] : row.id))) continue;
         for (const node of rows.flatMap(row => [row, ...descendants(row)])) {
             if (!(node instanceof BoxRenderable)) continue;
             const [first, body, ...extra] = children(node);

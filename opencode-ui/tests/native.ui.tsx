@@ -41,7 +41,7 @@ function Row(props: { running: boolean; expanded: boolean; animations: boolean; 
 }
 
 async function fixture({ grouped = true, animations = true, expanded = false, running = true, lines = 5,
-    rowID = "msg_fixture", width = 80 } = {}) {
+    rowID = "msg_fixture", anonymous = false, width = 80 } = {}) {
     const [state, setState] = createSignal({ expanded, running, animations, revision: 1,
         outcome: "" as "" | "completed" | "interrupted" });
     let anchor!: BoxRenderable, scroll!: ScrollBoxRenderable, composer!: BoxRenderable, style!: SyntaxStyle;
@@ -56,7 +56,7 @@ async function fixture({ grouped = true, animations = true, expanded = false, ru
         return <box flexDirection="column" height={16}>
           <box flexGrow={1} minHeight={0} position="relative" height={14}>
            <scrollbox ref={node => scroll = node} width="100%" height="100%" flexGrow={1} stickyStart="bottom">
-            <Show when={state().revision} keyed>{() => <box id={rowID} flexShrink={0}>
+            <Show when={state().revision} keyed>{() => <box id={anonymous ? undefined : rowID} flexShrink={0}>
                 <Show when={grouped} fallback={
                     <box ref={node => anchor = node} paddingLeft={3} flexDirection="column" flexShrink={0}>
                         <box border={["left"]} paddingLeft={1}>
@@ -219,7 +219,9 @@ test("runtime failures report the phase and error type without exposing exceptio
 });
 
 test("initial anonymous groups keep a timer and collapse footer without any message boundary row", async () => {
-    const s = await fixture({ rowID: "native-anonymous-group", expanded: true, lines: 60 });
+    const s = await fixture({ anonymous: true, expanded: true, lines: 60 });
+    assert.ok(s.anchor.parent);
+    assert.equal(s.anchor.parent.id, undefined);
     const running = startPlugin(s, messagesAt(Date.now()));
     try {
         await s.renderOnce();
@@ -238,8 +240,22 @@ test("initial anonymous groups keep a timer and collapse footer without any mess
     } finally { running.cleanup(); await s.close(); }
 });
 
+test("message-ID fallback safely skips anonymous rows before a boundary and without a boundary", async () => {
+    const s = await fixture({ anonymous: true, expanded: true });
+    try {
+        assert.equal(s.blocks().length, 0);
+        const boundary = new BoxRenderable(s.renderer, { id: "msg_fixture", height: 0 });
+        // The anonymous row must be checked before the recognized boundary.
+        s.scroll.add(boundary);
+        assert.equal(s.blocks().length, 1);
+        s.update(); await s.renderOnce();
+        assert.match(s.captureCharFrame(), /Thinking: Fixture\s+· 2s/);
+        assert.match(s.captureCharFrame(), /收起思考/);
+    } finally { await s.close(); }
+});
+
 test("removing a mounted message boundary does not remove enhancements from its anonymous group", async () => {
-    const s = await fixture({ rowID: "native-anonymous-group", expanded: true });
+    const s = await fixture({ anonymous: true, expanded: true });
     const boundary = new BoxRenderable(s.renderer, { id: "msg_fixture", height: 0 });
     s.scroll.add(boundary, 0);
     const running = startPlugin(s, messagesAt(Date.now()));
@@ -255,7 +271,7 @@ test("removing a mounted message boundary does not remove enhancements from its 
 });
 
 test("anonymous transcript ownership follows the slot session and is cleared across routes", async () => {
-    const s = await fixture({ rowID: "native-anonymous-group", expanded: true });
+    const s = await fixture({ anonymous: true, expanded: true });
     const messages = messagesAt(Date.now());
     const running = startPlugin(s, messages);
     try {
