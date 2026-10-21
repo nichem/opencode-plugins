@@ -1,8 +1,8 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息，以及显示当前供应商额度。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息、显示当前供应商额度，以及选择网络搜索供应商。
 
-原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏针对 **OpenCode 2.1.0** 适配。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
+原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和搜索选择器针对 **OpenCode 2.1.0** 适配。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
 
 ## 插件一览
 
@@ -13,6 +13,7 @@
 | [opencode-message-delete](./opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
 | [opencode-quota](./opencode-quota/README.md) | 当前供应商额度，内置 Go、DeepSeek、智谱 / Z.AI Coding Plan、Kimi For Coding，支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
+| [opencode-websearch](./opencode-websearch/README.md) | 搜索供应商单选、会话内选择及 DeepSeek Search（DSS） | `/search` | `opencode.json` + `cli.json` |
 
 ## 快速安装
 
@@ -32,11 +33,11 @@ npx github:nichem/opencode-plugins
 - **卸载**：多选已配置的插件，再确认卸载；确认默认选择否。仅移除配置，保留账号、凭据、缓存和插件数据。
 - **返回 / 退出**：子菜单按 `Esc` 返回，主菜单选择退出，或按 `Ctrl+C`。
 
-安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal 和额度侧栏自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
+安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal、额度侧栏和搜索选择器自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
 
 版本按各插件整个目录的 Git tree hash 判断：比较已安装提交与 `main` 最新提交中的对应目录，内容相同就视为最新版。其他插件、根目录文档或安装器的修改不会触发该插件的更新提示；插件目录内的文档和测试变化仍算更新，改动撤销后内容相同也不会提示更新。安装时仍固定到本次检查的完整提交 SHA；后续更新请重新运行上面的命令。
 
-安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的不同分支、标签或地址写法不会互借版本。Goal 和额度侧栏均分别比较两个入口，全部一致才显示最新版。通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
+安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的不同分支、标签或地址写法不会互借版本。Goal、额度侧栏和搜索选择器均分别比较两个入口，全部一致才显示最新版。通过 GitHub API 查询提交元数据和非递归根目录 tree，不请求文件正文；同一次检查复用相同提交的查询结果。网络失败、API 限流或目录版本无法解析时显示检查失败，该项不可选，请返回重试；未能确定已安装版本时仍可重新安装。显示最新版仅代表目录内容一致，不代表已验证插件运行正常。当前按插件自包含目录比较；以后如引入目录外共享依赖，需同步扩展比较范围。
 
 改动前备份到 `~/.local/state/opencode-plugins/backups/`（设置 `XDG_STATE_HOME` 时跟随该目录），完成后尝试 `opencode reload`。请重新打开 OpenCode 终端界面，由 OpenCode 下载并加载插件。
 
@@ -48,7 +49,7 @@ npx github:nichem/opencode-plugins
 
 ### 服务端：`opencode.json`
 
-负责供应商接入、预设 agent、目标执行和额度查询；使用 `opencode.jsonc` 也可以，无需同时维护两份。
+负责供应商接入、预设 agent、目标执行、额度查询和搜索选择；使用 `opencode.jsonc` 也可以，无需同时维护两份。
 
 ```json
 {
@@ -56,14 +57,15 @@ npx github:nichem/opencode-plugins
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-websearch"
   ]
 }
 ```
 
 ### 终端界面：`cli.json`
 
-负责 Goal 的状态通知、删除消息命令和额度侧栏显示。
+负责 Goal 的状态通知、删除消息命令、额度侧栏和搜索选择弹窗。
 
 ```json
 {
@@ -71,12 +73,13 @@ npx github:nichem/opencode-plugins
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-message-delete",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-websearch"
   ]
 }
 ```
 
-Goal 和额度侧栏在两个文件中使用各自相同的地址，分别加载服务端和界面入口。Goal 仅配置服务端可以执行目标，但缺少界面状态通知；额度侧栏需要两个入口共同工作。
+Goal、额度侧栏和搜索选择器在两个文件中使用各自相同的地址，分别加载服务端和界面入口。Goal 仅配置服务端可以执行目标，但缺少界面状态通知；额度侧栏和搜索选择器需要各自的两个入口共同工作。
 
 配置完成后执行 `opencode reload`，并重新打开终端界面。
 
@@ -145,6 +148,16 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 额度侧栏随仓库分发预编译的 `tui.js`，安装时无需本地编译。旧版本出现 `Cannot find package 'react'` 时，通过安装器更新额度插件并重新打开 TUI。
 
 `a106134` 版本若出现 `NpmInstallFailedError`，同样需要更新额度插件；已调整开发构建命令，避免 Git 安装触发预构建。
+
+### 网络搜索供应商
+
+执行 `/search` 打开单选弹窗；无已有设置时默认 `random`，动态列出全部已注册的搜索供应商。按 Enter 保存当前项目默认，按 `s` 仅当前会话生效；首页或高亮 `random` 时隐藏 `s`。
+
+会话中按实际会话目录定位配置，Enter 仅更新该目录的 `websearch.provider`，遵循 `.opencode` 的配置优先级，写入前备份并检查并发修改，保存后刷新并核验生效结果；`s` 只保存会话设置。继承的全局或上级禁用设置同样会隐藏 `s`。
+
+新增 DSS（DeepSeek Search），通过 `/connect` 的 DeepSeek 连接复用当前 API Key，调用官方新上线的 Search API。未连接时保留显示并标记为不可用。搜索保留原生供应商字段和权限检查。完整行为及验证说明见 [搜索选择器文档](./opencode-websearch/README.md)。
+
+弹窗兼容其他供应商插件的先后加载顺序，显示最终默认值。DSS 查询超过 128 个 Unicode 字符时，向模型返回明确限制，供模型缩短后重试。
 
 ## 更新与迁移
 

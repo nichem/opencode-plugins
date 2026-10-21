@@ -90,7 +90,7 @@ test("status distinguishes latest, update, absent, incomplete and failed checks"
         [older, new Map([["opencode-message-delete", "old"]])],
     ]);
     const state = statuses(cfg, revision, `opencode-providers ${revision.slice(0,7)} ${specifier("opencode-providers", "main")}`, trees);
-    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent"]);
+    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent"]);
     assert.equal(statuses(cfg, undefined)[0].state, "unknown");
     assert.equal(statuses(cfg, revision)[0].state, "repair");
 });
@@ -114,6 +114,22 @@ test("quota installs both entrances, preserves script options on update and remo
     assert.deepEqual(parse(updated.next).plugins[0].options, config.data.plugins[0].options);
     const removed = planChanges([config], [quota], "remove")[0];
     assert.deepEqual(parse(removed.next).plugins, ["other"]);
+});
+
+test("websearch installs both entrances and uninstall preserves unrelated configuration", () => {
+    const search = catalog.find(plugin => plugin.id === "opencode-websearch");
+    const initial = configs();
+    const changes = planChanges(initial, [search], "install", revision);
+    assert.deepEqual(changes.map(config => config.path), ["opencode.json", "cli.json"]);
+    for (const change of changes) assert.deepEqual(parse(change.next).plugins, [specifier(search.id, revision)]);
+    const configured = changes.map(change => ({ ...change, original: change.next,
+        data: { ...parse(change.next), websearch: { provider: "tavily" } } }));
+    for (const config of configured) config.original = JSON.stringify({ ...config.data, plugins: [...config.data.plugins, "foreign"] });
+    for (const config of configured) config.data = parse(config.original);
+    for (const change of planChanges(configured, [search], "remove")) {
+        assert.deepEqual(parse(change.next).plugins, ["foreign"]);
+        assert.deepEqual(parse(change.next).websearch, { provider: "tavily" });
+    }
 });
 
 test("disk changes make backups, preserve concurrent edits and roll back earlier files", async () => {

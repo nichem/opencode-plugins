@@ -1,0 +1,45 @@
+{
+  "name": "opencode-websearch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native web search provider picker and DeepSeek Search for OpenCode 2.x",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./tui": "./tui.js",
+    "./rpc": "./src/rpc.js"
+  },
+  "files": [
+    "index.js",
+    "tui.js",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:ui": "bun --conditions=browser test ./tests/picker.ui.mjs",
+    "check:host": "node scripts/check-host.mjs",
+    "check:smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.1.0",
+    "effect": "4.0.1",
+    "jsonc-parser": "3.3.1"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.6.6",
+    "@opentui/solid": ">=0.6.6",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@opentui/core": "0.6.6",
+    "@opentui/solid": "0.6.6",
+    "solid-js": "1.9.12"
+  }
+}
