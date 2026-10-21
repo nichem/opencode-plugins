@@ -1,7 +1,6 @@
 // Only artificial sessions, an offline model, and fixture search providers are used.
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
@@ -14,7 +13,9 @@ import { DSS_QUERY_ERROR } from "../src/deepseek.js";
 
 const executable = process.argv[2];
 if (!executable) throw new Error("Pass the path to the OpenCode 2.1.0 executable");
-const root = mkdtempSync(join(tmpdir(), "opencode-websearch-smoke-"));
+// Windows user temp directories inherit configs from the real user's home.
+// Keep all fixture projects in the ignored dependency directory instead.
+const root = mkdtempSync(join(fileURLToPath(new URL("../node_modules/", import.meta.url)), ".opencode-websearch-smoke-"));
 const project = join(root, "project"), config = join(root, "config", "opencode");
 for (const directory of [project, config, join(root, "home")]) mkdirSync(directory, { recursive: true });
 const plugin = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/");
@@ -87,9 +88,18 @@ try {
         return result;
     };
     const initial = await rpc.state({}, options);
-    assert.equal(initial.defaultProvider, "fixture-a");
+    assert.equal(initial.defaultProvider, "fixture-a", JSON.stringify({ sources: await searchConfiguration(client, options.location) }));
     assert.ok(initial.providers.some(provider => provider.id === "dss" && !provider.available));
     console.log("PASS: native plugin and RPC load; existing default is preserved; disconnected DSS is disabled.");
+    const integrations = await api("/api/integration");
+    const dssIntegration = integrations.find(integration => integration.id === "dss");
+    assert.equal(dssIntegration?.name, "DSS (DeepSeek Search)");
+    assert.ok(dssIntegration.methods.some(method => method.type === "key" && method.label === "DeepSeek Search API Key"));
+    const deepseekBefore = await api("/api/integration/deepseek");
+    await client.integration.connect.key({ integrationID: "deepseek", key: "fixture-model-key", location: { directory: project } });
+    assert.ok((await rpc.state({}, options)).providers.some(provider => provider.id === "dss" && !provider.available));
+    assert.equal((await api("/api/integration/deepseek")).name, deepseekBefore.name);
+    console.log("PASS: /connect lists a standalone DSS key integration; connecting the DeepSeek model does not enable DSS.");
     const create = (modelID = "test") => api("/api/session", { title: "Search fixture", model: { providerID: "websearch-fixture", id: modelID },
         permissions: [{ action: "*", resource: "*", effect: "allow" }] });
     const first = await create(), second = await create();
@@ -119,8 +129,21 @@ try {
     assert.equal((await rpc.state({ sessionID: first.id }, options)).sessionProvider, "fixture-b");
     assert.equal((await rpc.state({}, options)).defaultProvider, "fixture-a");
     console.log("PASS: random cannot be applied at session scope; existing choices are preserved.");
-    await client.integration.connect.key({ integrationID: "deepseek", key: "fixture-search-key-1", location: { directory: project } });
+    await client.integration.connect.key({ integrationID: "dss", key: "fixture-search-key-1", location: { directory: project } });
     assert.ok((await rpc.state({}, options)).providers.some(provider => provider.id === "dss" && provider.available));
+    assert.equal((await api("/api/websearch", { query: "offline fixture", providerID: "dss" })).providerID, "dss");
+    await client.integration.connect.key({ integrationID: "deepseek", key: "another-fixture-model-key", location: { directory: project } });
+    assert.equal((await api("/api/websearch", { query: "offline fixture", providerID: "dss" })).providerID, "dss");
+    await client.integration.connect.key({ integrationID: "dss", key: "fixture-search-key-2", location: { directory: project } });
+    assert.equal((await api("/api/websearch", { query: "offline fixture", providerID: "dss" })).providerID, "dss");
+    const dssCredentials = (await client.credential.list()).filter(credential => credential.integrationID === "dss");
+    assert.ok(dssCredentials.length > 0);
+    for (const credential of dssCredentials) await client.credential.remove({ credentialID: credential.id });
+    assert.ok((await rpc.state({}, options)).providers.some(provider => provider.id === "dss" && !provider.available));
+    assert.ok((await api("/api/integration/deepseek")).connections.some(connection => connection.type === "credential"));
+    await client.integration.connect.key({ integrationID: "dss", key: "fixture-search-key-1", location: { directory: project } });
+    assert.ok((await rpc.state({}, options)).providers.some(provider => provider.id === "dss" && provider.available));
+    console.log("PASS: DSS account switching and removal stay isolated from the DeepSeek model connection.");
     const dssSession = await create();
     await select({ providerID: "dss", scope: "session", sessionID: dssSession.id }, options);
     const dss = await search(dssSession.id);
@@ -246,7 +269,9 @@ try {
     const globalDisabledOptions = { location: { directory: globalDisabledProject } };
     const globalDisabledSession = await api("/api/session", { title: "Inherited disabled fixture", location: { directory: globalDisabledProject },
         model: { providerID: "websearch-fixture", id: "test" }, permissions: [{ action: "*", resource: "*", effect: "allow" }] }, globalDisabledProject);
-    assert.equal((await rpc.state({ sessionID: globalDisabledSession.id }, globalDisabledOptions)).enabled, false);
+    const inheritedDisabledState = await rpc.state({ sessionID: globalDisabledSession.id }, globalDisabledOptions);
+    assert.equal(inheritedDisabledState.enabled, false, JSON.stringify({ defaultProvider: inheritedDisabledState.defaultProvider,
+        sources: await searchConfiguration(client, globalDisabledOptions.location) }));
     await assert.rejects(select({ providerID: "fixture-b", scope: "session", sessionID: globalDisabledSession.id }, globalDisabledOptions),
         error => error.type === "selection");
     const inheritedDisabledTool = await search(globalDisabledSession.id, globalDisabledProject);

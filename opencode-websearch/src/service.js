@@ -1,4 +1,4 @@
-import { DSS_ID, DSS_NAME, deepseekCredential, SearchError, searchDeepSeek } from "./deepseek.js";
+import { DSS_ID, DSS_NAME, dssCredential, SearchError, searchDeepSeek } from "./deepseek.js";
 import { ProjectConfiguration } from "./config.js";
 import { resolve } from "node:path";
 
@@ -16,15 +16,15 @@ export class SearchService {
     sessionKey(sessionID) { return `session/${sessionID}`; }
 
     async initialize() {
-        this.connected = Boolean(await deepseekCredential(this.ctx.integration));
+        this.connected = Boolean(await dssCredential(this.ctx.integration));
     }
 
     transform(editor) {
         if (this.connected) editor.add({
             id: DSS_ID, name: DSS_NAME,
             execute: async ({ query }, { signal }) => {
-                const key = await deepseekCredential(this.ctx.integration);
-                if (!key) throw new SearchError("请先通过 /connect 连接 DeepSeek，再使用 DSS");
+                const key = await dssCredential(this.ctx.integration);
+                if (!key) throw new SearchError("请先通过 /connect 连接 DSS (DeepSeek Search)");
                 return searchDeepSeek(query, key, signal, this.transport);
             },
         });
@@ -41,7 +41,7 @@ export class SearchService {
     }
 
     async updateConnection() {
-        const connected = Boolean(await deepseekCredential(this.ctx.integration));
+        const connected = Boolean(await dssCredential(this.ctx.integration));
         if (connected === this.connected) return;
         const previous = this.connected;
         this.connected = connected;
@@ -79,7 +79,7 @@ export class SearchService {
     async apply({ providerID, scope, sessionID, sources }) {
         const state = await this.state(sessionID, sources);
         if (providerID !== "random" && !state.providers.some(item => item.id === providerID && item.available))
-            throw new SelectionError(providerID === DSS_ID ? "请先通过 /connect 连接 DeepSeek" : "该搜索供应商当前不可用，请重新选择");
+            throw new SelectionError(providerID === DSS_ID ? "请先通过 /connect 连接 DSS (DeepSeek Search)" : "该搜索供应商当前不可用，请重新选择");
         if (sessionID) await this.assertSessionLocation(sessionID);
         if (scope === "session") {
             if (!sessionID) throw new SelectionError("请先打开一个会话");

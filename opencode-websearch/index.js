@@ -3,10 +3,15 @@ import { SearchRPC } from "./src/rpc.js";
 import { SearchService, SelectionError } from "./src/service.js";
 import { wrapSearch } from "./src/tool.js";
 import { ConfigurationError } from "./src/config.js";
+import { DSS_ID, DSS_NAME } from "./src/deepseek.js";
 
 export default Plugin.define({
     id: "opencode-websearch",
     async setup(ctx) {
+        await ctx.integration.transform(editor => {
+            editor.update(DSS_ID, integration => { integration.name = `${DSS_NAME} (DeepSeek Search)`; });
+            editor.method.update({ integrationID: DSS_ID, method: { type: "key", label: "DeepSeek Search API Key" } });
+        });
         const service = new SearchService(ctx);
         await service.initialize();
         await ctx.websearch.transform(editor => service.transform(editor));

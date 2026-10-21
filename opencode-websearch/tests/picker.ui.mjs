@@ -11,9 +11,13 @@ const state = { defaultProvider: "random", enabled: true, providers: [
 async function render(sessionID, value = state) {
     let commands = [];
     const selected = [], notices = [];
+    const theme = {
+        text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#ffffff", focused: "#ffffff", selected: "#8090c0" } } },
+        background: { base: "#202020", action: { primary: { base: "transparent", focused: "#405080" } } },
+        surface: () => theme,
+    };
     const ctx = {
-        theme: { text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#ffffff" } } },
-            background: { raised: { base: "#202020" }, action: { primary: { base: "#405080" } } } },
+        theme,
         keymap: { layer: factory => { createEffect(() => { commands = factory().commands; }); } },
         ui: { toast: { show: notice => { notices.push(notice); } } },
     };

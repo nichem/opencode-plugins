@@ -151,11 +151,11 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ### 网络搜索供应商
 
-执行 `/search` 打开单选弹窗；无已有设置时默认 `random`，动态列出全部已注册的搜索供应商。按 Enter 保存当前项目默认，按 `s` 仅当前会话生效；首页或高亮 `random` 时隐藏 `s`。
+执行 `/search` 打开紧凑的单行列表；无已有设置时默认 `random`，动态列出全部已注册的搜索供应商。整行高亮当前选项，勾号标识已生效的选择。按 Enter 保存当前项目默认，按 `s` 仅当前会话生效；首页或高亮 `random` 时隐藏 `s`。
 
 会话中按实际会话目录定位配置，Enter 仅更新该目录的 `websearch.provider`，遵循 `.opencode` 的配置优先级，写入前备份并检查并发修改，保存后刷新并核验生效结果；`s` 只保存会话设置。继承的全局或上级禁用设置同样会隐藏 `s`。
 
-新增 DSS（DeepSeek Search），通过 `/connect` 的 DeepSeek 连接复用当前 API Key，调用官方新上线的 Search API。未连接时保留显示并标记为不可用。搜索保留原生供应商字段和权限检查。完整行为及验证说明见 [搜索选择器文档](./opencode-websearch/README.md)。
+新增 DSS（DeepSeek Search），通过 `/connect` 中独立的 **DSS (DeepSeek Search)** 入口保存搜索 API Key，调用官方新上线的 Search API。DSS 与 DeepSeek 模型连接分别管理；升级后需要在 DSS 入口单独连接。未连接时保留显示并标记为不可用。搜索保留原生供应商字段和权限检查。完整行为及验证说明见 [搜索选择器文档](./opencode-websearch/README.md)。
 
 弹窗兼容其他供应商插件的先后加载顺序，显示最终默认值。DSS 查询超过 128 个 Unicode 字符时，向模型返回明确限制，供模型缩短后重试。
 

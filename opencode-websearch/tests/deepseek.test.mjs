@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deepseekCredential, parseResults, searchDeepSeek, SEARCH_URL } from "../src/deepseek.js";
+import { dssCredential, parseResults, searchDeepSeek, SEARCH_URL } from "../src/deepseek.js";
 
 const signal = () => new AbortController().signal;
 test("DSS sends one request to the official API and maps summaries and millisecond publication times", async () => {
@@ -53,7 +53,24 @@ test("cancellation prevents a request and is propagated to the transport", async
 test("only an active OpenCode key connection is used", async () => {
     for (const value of [undefined, { type: "oauth", access: "fixture" }, { type: "key", key: " " }]) {
         const integration = { connection: { active: async () => ({ type: "credential" }), resolve: async () => value } };
-        assert.equal(await deepseekCredential(integration), undefined);
+        assert.equal(await dssCredential(integration), undefined);
     }
-    assert.equal(await deepseekCredential({ connection: { active: async () => ({ type: "external" }), resolve: () => assert.fail() } }), undefined);
+    assert.equal(await dssCredential({ connection: { active: async () => ({ type: "external" }), resolve: () => assert.fail() } }), undefined);
+});
+
+test("DSS resolves only its own active connection without falling back to the DeepSeek model credential", async () => {
+    const read = [];
+    const credentials = new Map([["deepseek", { type: "key", key: "fixture-model-key" }]]);
+    const integration = { connection: {
+        active: async id => { read.push(id); return credentials.has(id) ? { type: "credential", id } : undefined; },
+        resolve: async connection => credentials.get(connection.id),
+    } };
+    assert.equal(await dssCredential(integration), undefined);
+    credentials.set("dss", { type: "key", key: "fixture-search-key" });
+    assert.equal(await dssCredential(integration), "fixture-search-key");
+    credentials.set("deepseek", { type: "key", key: "another-fixture-model-key" });
+    assert.equal(await dssCredential(integration), "fixture-search-key");
+    credentials.delete("dss");
+    assert.equal(await dssCredential(integration), undefined);
+    assert.deepEqual(read, ["dss", "dss", "dss", "dss"]);
 });

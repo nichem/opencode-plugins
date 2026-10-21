@@ -12,7 +12,7 @@ export async function fixture({ configured, saved, credential, transport, native
             remove: async key => { storage.delete(key); } },
         session: { get: async ({ sessionID }) => ({ id: sessionID, location: { directory: sessionLocations[sessionID] ?? ctx.location.directory } }) },
         integration: { connection: {
-            active: async id => { if (id !== "deepseek") throw new Error("Unexpected integration"); return credential ? { type: "credential", id: "test" } : undefined; },
+            active: async id => { if (id !== "dss") throw new Error("Unexpected integration"); return credential ? { type: "credential", id: "test" } : undefined; },
             resolve: async () => credential,
         } },
         websearch: {

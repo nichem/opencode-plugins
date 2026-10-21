@@ -49,8 +49,8 @@ export function rateLimitError(response) {
     return error;
 }
 
-export async function deepseekCredential(integration) {
-    const connection = await integration.connection.active("deepseek");
+export async function dssCredential(integration) {
+    const connection = await integration.connection.active(DSS_ID);
     if (connection?.type !== "credential") return;
     const value = await integration.connection.resolve(connection);
     if (value?.type === "key" && value.key.trim()) return value.key;
@@ -90,7 +90,7 @@ export async function searchDeepSeek(query, key, requestSignal, transport = glob
     }
     if (!response.ok) {
         if (response.status === 429) throw rateLimitError(response);
-        const message = response.status === 401 ? "DSS 凭据无效，请通过 /connect 检查 DeepSeek 连接"
+        const message = response.status === 401 ? "DSS 凭据无效，请通过 /connect 检查 DSS 连接"
             : response.status === 402 ? "DeepSeek 余额不足"
             : `DSS 搜索失败（HTTP ${response.status}）`;
         // Do not expose upstream error bodies: they can contain connection secrets.
