@@ -90,7 +90,7 @@ test("status distinguishes latest, update, absent, incomplete and failed checks"
         [older, new Map([["opencode-message-delete", "old"]])],
     ]);
     const state = statuses(cfg, revision, `opencode-providers ${revision.slice(0,7)} ${specifier("opencode-providers", "main")}`, trees);
-    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent"]);
+    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent", "absent"]);
     assert.equal(statuses(cfg, undefined)[0].state, "unknown");
     assert.equal(statuses(cfg, revision)[0].state, "repair");
 });
@@ -99,6 +99,18 @@ test("only this GitHub repository's known plugin subpaths are managed", () => {
     assert.equal(identify("opencode-goal"), undefined);
     assert.equal(identify("git+https://github.com/other/opencode-plugins.git#main::path:opencode-goal"), undefined);
     assert.equal(identify("github:nichem/opencode-plugins#main::path:opencode-goal").id, "opencode-goal");
+});
+
+test("UI enhancement installs only in cli.json and preserves options and other plugins", () => {
+    const ui = catalog.find(plugin => plugin.id === "opencode-ui");
+    const changes = planChanges(configs(), [ui], "install", revision);
+    assert.deepEqual(changes.map(config => config.path), ["cli.json"]);
+    assert.deepEqual(parse(changes[0].next).plugins, [specifier(ui.id, revision)]);
+    const data = { plugins: ["foreign", { package: specifier(ui.id, older), options: { thinkingTimer: false } }], theme: "fixture" };
+    const config = { kind: "tui", path: "cli.json", original: JSON.stringify(data), data };
+    const updated = parse(planChanges([config], [ui], "install", revision)[0].next);
+    assert.deepEqual(updated.plugins, ["foreign", { package: specifier(ui.id, revision), options: { thinkingTimer: false } }]);
+    assert.deepEqual(parse(planChanges([config], [ui], "remove")[0].next), { plugins: ["foreign"], theme: "fixture" });
 });
 
 test("quota installs both entrances, preserves script options on update and removes only its entries", () => {

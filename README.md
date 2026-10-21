@@ -1,8 +1,8 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息、显示当前供应商额度，以及选择网络搜索供应商。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息、显示当前供应商额度、选择网络搜索供应商，以及优化思考区块的计时和收起操作。
 
-原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和搜索选择器针对 **OpenCode 2.1.0** 适配。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
+原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和搜索选择器针对 **OpenCode 2.1.0** 适配，UI 优化当前适配 **OpenCode 2.1.2**。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
 
 ## 插件一览
 
@@ -14,6 +14,7 @@
 | [opencode-agents](./opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
 | [opencode-quota](./opencode-quota/README.md) | 当前供应商额度，内置 Go、DeepSeek、智谱 / Z.AI Coding Plan、Kimi For Coding，支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
 | [opencode-websearch](./opencode-websearch/README.md) | 搜索供应商单选、会话内选择及 DeepSeek Search（DSS） | `/search` | `opencode.json` + `cli.json` |
+| [opencode-ui](./opencode-ui/README.md) | 思考中实时计时、展开内容末尾一键收起 | 思考标题与末尾、`/ui-enhance-status` | `cli.json` |
 
 ## 快速安装
 
@@ -65,7 +66,7 @@ npx github:nichem/opencode-plugins
 
 ### 终端界面：`cli.json`
 
-负责 Goal 的状态通知、删除消息命令、额度侧栏和搜索选择弹窗。
+负责 Goal 的状态通知、删除消息命令、额度侧栏、搜索选择弹窗和思考 UI 优化。
 
 ```json
 {
@@ -74,7 +75,8 @@ npx github:nichem/opencode-plugins
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-message-delete",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-websearch"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-websearch",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-ui"
   ]
 }
 ```
@@ -158,6 +160,12 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 新增 DSS（DeepSeek Search），通过 `/connect` 中独立的 **DSS (DeepSeek Search)** 入口保存搜索 API Key，调用官方新上线的 Search API。DSS 与 DeepSeek 模型连接分别管理；升级后需要在 DSS 入口单独连接。未连接时保留显示并标记为不可用。搜索保留原生供应商字段和权限检查。完整行为及验证说明见 [搜索选择器文档](./opencode-websearch/README.md)。
 
 弹窗兼容其他供应商插件的先后加载顺序，显示最终默认值。DSS 查询超过 128 个 Unicode 字符时，向模型返回明确限制，供模型缩短后重试。
+
+### 思考 UI 优化
+
+思考进行中在原 `Thinking` 标题后每秒更新耗时，关闭动画后仍可显示；成组标题累计该组耗时，单独标题只计算当前片段，隐藏的上下文更新不会重置同组计时。展开后在内容末尾显示“↑ 收起思考”，长分组单独挂载时仍可从底部收起。完成后沿用原生最终耗时。纯终端插件，仅需配置 `cli.json`。
+
+当前适配 OpenCode **2.1.2**，使用内部思考布局兼容层；其他版本停止增强并提示，不修改原 UI。状态可用 `/ui-enhance-status` 查看。选项和兼容边界见 [UI 优化文档](./opencode-ui/README.md)。
 
 ## 更新与迁移
 
