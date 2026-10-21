@@ -1,19 +1,21 @@
-import { BoxRenderable, CodeRenderable, MouseEvent, ScrollBoxRenderable, TextRenderable, Yoga } from "@opentui/core";
+import { BoxRenderable, CodeRenderable, MouseEvent, Renderable, ScrollBoxRenderable, TextRenderable, Yoga } from "@opentui/core";
 import { formatDuration } from "./duration.js";
 
-export const supportedVersions = ["2.1.2"];
+export const supportedRange = "2.x";
 const prefix = "opencode-ui:";
 
 /** @param {string} version */
 export function supports(version) {
-    return supportedVersions.includes(version.replace(/^v/, ""));
+    return /^v?2\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version);
 }
 
 /** @param {import('@opentui/core').BaseRenderable} node */
 function children(node) {
     // Solid's conditional siblings leave invisible LayoutSlotRenderable nodes.
     // They do not contribute to the visible header/body shape.
-    return node.getChildren().filter(child => child.visible && !child.id.startsWith(prefix));
+    if (node instanceof Renderable && node.isDestroyed) return [];
+    return node.getChildren().filter(child => child.visible && !(child instanceof Renderable && child.isDestroyed)
+        && !child.id.startsWith(prefix));
 }
 
 /** @param {import('@opentui/core').BaseRenderable} node
@@ -44,7 +46,8 @@ function headerText(text) {
 }
 
 /** @typedef {{ anchor: BoxRenderable, header: BoxRenderable, title: TextRenderable,
- * clockParent: BoxRenderable, scroll: ScrollBoxRenderable, running: boolean, expanded: boolean, grouped: boolean }} ThinkingBlock */
+ * clockParent: BoxRenderable, body?: BoxRenderable, scroll: ScrollBoxRenderable,
+ * running: boolean, expanded: boolean, grouped: boolean }} ThinkingBlock */
 
 /** @typedef {{ clock?: TextRenderable, footer?: BoxRenderable, inlineParent?: BoxRenderable }} Attachment */
 
@@ -90,7 +93,7 @@ export function findBlocks(root, messageIDs, transcript) {
                 if (title && title.parent instanceof BoxRenderable && (running || icon === "+" || icon === "-")) {
                     const expanded = !!body && hasCode(body);
                     if (!body || expanded) {
-                        result.push({ anchor: node, header: first, title, clockParent: title.parent, scroll, running, expanded, grouped: true });
+                        result.push({ anchor: node, header: first, title, clockParent: title.parent, body, scroll, running, expanded, grouped: true });
                         continue;
                     }
                 }
@@ -106,7 +109,7 @@ export function findBlocks(root, messageIDs, transcript) {
             if (!title || !(title.parent instanceof BoxRenderable)) continue;
             const running = headerText(title).startsWith("Thinking");
             if (body && !hasCode(body)) continue;
-            result.push({ anchor: node, header: clickable, title, clockParent: title.parent, scroll, running, grouped: false,
+            result.push({ anchor: node, header: clickable, title, clockParent: title.parent, body, scroll, running, grouped: false,
                 expanded: !!body && (title.plainText.startsWith("- ") || (running
                     && children(body)[0] instanceof BoxRenderable
                     && /** @type {BoxRenderable} */ (children(body)[0]).getPadding(Yoga.Edge.Left).value === 3)) });
@@ -129,6 +132,9 @@ export class ThinkingAdapter {
      * @param {boolean} timer
      * @param {boolean} collapse */
     update(blocks, durations, timer, collapse) {
+        blocks = blocks.filter(block => !block.anchor.isDestroyed && !block.header.isDestroyed
+            && !block.title.isDestroyed && !block.clockParent.isDestroyed && !block.scroll.isDestroyed
+            && !block.body?.isDestroyed);
         const active = blocks.filter(block => block.running);
         const seen = new Set(blocks.map(block => block.header));
         for (const [header, state] of this.attached) {
@@ -162,19 +168,18 @@ export class ThinkingAdapter {
             } else {
                 clearClock(state);
             }
-            if (collapse && block.expanded) {
+            if (collapse && block.expanded && block.body) {
                 if (!state.footer) {
-                    state.footer = new BoxRenderable(this.ctx.renderer, { id: `${prefix}collapse`, paddingLeft: 3, flexShrink: 0,
+                    state.footer = new BoxRenderable(this.ctx.renderer, { id: `${prefix}collapse`, paddingLeft: block.grouped ? 0 : 3,
+                        height: 1, flexShrink: 0,
                         onMouseUp: event => this.collapse(block, event) });
-                    state.footer.add(new TextRenderable(this.ctx.renderer, { content: "↑ 收起思考", selectable: false, fg: this.ctx.theme.text.muted }));
-                    block.anchor.add(state.footer);
+                    state.footer.add(new TextRenderable(this.ctx.renderer, { content: "↑ 收起思考", selectable: false,
+                        wrapMode: "none", fg: this.ctx.theme.text.muted }));
                 }
-                // Solid can replace the body while keeping the header mounted.
-                // Keep our unmanaged footer after the new host-owned content.
-                if (block.anchor.getChildren().at(-1) !== state.footer) {
-                    block.anchor.remove(state.footer);
-                    block.anchor.add(state.footer);
-                }
+                // Bind the footer's lifetime to the body. Completion/interruption
+                // can remove that body before the next scan, while preserving
+                // the header and adding an assistant status row underneath.
+                if (block.body.getChildren().at(-1) !== state.footer) block.body.add(state.footer);
                 const text = state.footer.getChildren()[0];
                 if (text instanceof TextRenderable) text.fg = this.ctx.theme.text.muted;
             } else {

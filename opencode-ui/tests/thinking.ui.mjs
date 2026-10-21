@@ -5,6 +5,13 @@ import { createTestRenderer } from "@opentui/core/testing";
 import { findBlocks, supports, ThinkingAdapter } from "../src/adapter.js";
 import plugin from "../tui.js";
 
+/** @param {import('@opentui/core').BaseRenderable} node
+ * @returns {BoxRenderable[]} */
+function collapseControls(node) {
+    return node.getChildren().flatMap(child => child instanceof BoxRenderable && child.id === "opencode-ui:collapse"
+        ? [child] : collapseControls(child));
+}
+
 // Artificial documents only. Shapes mirror the two native v2.1.2 components.
 async function fixture({ running = true, expanded = false, individual = false, showMode = false, lines = 5, width = 80,
     rowID = "msg_fixture" } = {}) {
@@ -87,7 +94,7 @@ test("the footer collapses the original block from the bottom of a long thought 
         s.update(); await s.renderOnce();
         s.scroll.scrollTo(s.scroll.scrollHeight); await s.renderOnce();
         assert.match(s.captureCharFrame(), /收起思考/);
-        const footer = s.anchor.getChildren().find(node => node.id === "opencode-ui:collapse");
+        const [footer] = collapseControls(s.anchor);
         await s.mockMouse.click(footer.x + 1, footer.y);
         s.update(); await s.renderOnce();
         assert.equal(s.expanded(), false);
@@ -98,7 +105,7 @@ test("the footer collapses the original block from the bottom of a long thought 
         s.update(); await s.renderOnce();
         assert.equal(s.expanded(), true);
         assert.equal(s.toggleCount(), 2);
-        assert.equal(s.anchor.getChildren().filter(node => node.id === "opencode-ui:collapse").length, 1);
+        assert.equal(collapseControls(s.anchor).length, 1);
     } finally { await s.close(); }
 });
 
@@ -110,7 +117,7 @@ test("individual reasoning has a live clock and its own collapse action", async 
             s.update(); await s.renderOnce();
             assert.match(s.captureCharFrame(), /收起思考/);
             if (running) assert.match(s.captureCharFrame(), /· 2s/);
-            const footer = s.anchor.getChildren().find(node => node.id === "opencode-ui:collapse");
+            const [footer] = collapseControls(s.anchor);
             await s.mockMouse.click(footer.x + 1, footer.y);
             s.update(); await s.renderOnce();
             assert.equal(s.expanded(), false);
@@ -122,7 +129,7 @@ test("a transcript containing only a session-part row still collapses from its f
     const s = await fixture({ expanded: true, running: false, rowID: "session-part:msg_fixture:reasoning:1" });
     try {
         s.update(); await s.renderOnce();
-        const footer = s.anchor.getChildren().find(node => node.id === "opencode-ui:collapse");
+        const [footer] = collapseControls(s.anchor);
         assert.ok(footer);
         await s.mockMouse.click(footer.x + 1, footer.y);
         s.update(); await s.renderOnce();
@@ -181,14 +188,19 @@ test("narrow layouts preserve the seconds counter", async () => {
     finally { await s.close(); }
 });
 
+test("all 2.x releases, including prereleases and build metadata, pass the version gate", () => {
+    for (const version of ["2.0.0", "2.1.2", "2.1.3", "2.10.0", "v2.1.2", "2.2.0-beta.1", "v2.2.0-dev.1+build.42"])
+        assert.ok(supports(version), version);
+});
+
 test("unsupported hosts register status only and never inspect the renderer tree", () => {
-    assert.ok(supports("2.1.2"));
-    assert.ok(supports("v2.1.2"));
-    assert.ok(!supports("2.1.3"));
-    const notices = [], commands = [];
-    plugin.setup({ app: { version: "2.1.3" }, keymap: { layer: factory => commands.push(...factory().commands) },
-        ui: { toast: { show: notice => notices.push(notice) } }, get renderer() { throw new Error("Must not inspect unsupported UI"); } });
-    assert.equal(notices.length, 1);
-    commands[0].run();
-    assert.match(notices.at(-1).message, /暂不支持.*2\.1\.3/);
+    for (const version of ["1.2.3", "3.0.0", "v3.0.0-beta.1", "12.1.2", "20.0.0", "unknown", ""]) {
+        assert.ok(!supports(version), version);
+        const notices = [], commands = [];
+        plugin.setup({ app: { version }, keymap: { layer: factory => commands.push(...factory().commands) },
+            ui: { toast: { show: notice => notices.push(notice) } }, get renderer() { throw new Error("Must not inspect unsupported UI"); } });
+        assert.equal(notices.length, 1);
+        commands[0].run();
+        assert.equal(notices.at(-1).message, `UI 增强暂不支持 OpenCode ${version}，当前支持 2.x。`);
+    }
 });

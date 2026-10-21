@@ -2,9 +2,14 @@ import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { createSignal, For, Match, Show, Switch } from "solid-js";
 import { testRender, useRenderer } from "@opentui/solid";
-import { BoxRenderable, ScrollBoxRenderable, SyntaxStyle, TextRenderable, Yoga } from "@opentui/core";
+import { type BaseRenderable, BoxRenderable, ScrollBoxRenderable, SyntaxStyle, TextRenderable, Yoga } from "@opentui/core";
 import { findBlocks, ThinkingAdapter } from "../src/adapter.js";
 import plugin from "../tui.js";
+
+function collapseControls(node: BaseRenderable): BoxRenderable[] {
+    return node.getChildren().flatMap(child => child instanceof BoxRenderable && child.id === "opencode-ui:collapse"
+        ? [child] : collapseControls(child));
+}
 
 // Artificial content, with the conditional sibling structure of native v2.1.2
 // Spinner, InlineToolRow, GroupAnchor and ReasoningPart. Compile through Solid
@@ -37,7 +42,8 @@ function Row(props: { running: boolean; expanded: boolean; animations: boolean; 
 
 async function fixture({ grouped = true, animations = true, expanded = false, running = true, lines = 5,
     rowID = "msg_fixture", width = 80 } = {}) {
-    const [state, setState] = createSignal({ expanded, running, animations });
+    const [state, setState] = createSignal({ expanded, running, animations, revision: 1,
+        outcome: "" as "" | "completed" | "interrupted" });
     let anchor!: BoxRenderable, scroll!: ScrollBoxRenderable, composer!: BoxRenderable, style!: SyntaxStyle;
     let toggles = 0;
     const toggle = () => { toggles++; setState(value => ({ ...value, expanded: !value.expanded })); };
@@ -50,7 +56,7 @@ async function fixture({ grouped = true, animations = true, expanded = false, ru
         return <box flexDirection="column" height={16}>
           <box flexGrow={1} minHeight={0} position="relative" height={14}>
            <scrollbox ref={node => scroll = node} width="100%" height="100%" flexGrow={1} stickyStart="bottom">
-            <box id={rowID} flexShrink={0}>
+            <Show when={state().revision} keyed>{() => <box id={rowID} flexShrink={0}>
                 <Show when={grouped} fallback={
                     <box ref={node => anchor = node} paddingLeft={3} flexDirection="column" flexShrink={0}>
                         <box border={["left"]} paddingLeft={1}>
@@ -72,7 +78,16 @@ async function fixture({ grouped = true, animations = true, expanded = false, ru
                         <Show when={true}><For each={[]}>{() => null}</For></Show>
                     </box>
                 </Show>
-            </box>
+            </box>}</Show>
+            <Show when={state().outcome}>
+                <box id="fixture-assistant-footer" marginTop={1} flexShrink={0}>
+                    <box paddingLeft={3}>
+                        <text><span>Build</span><span> · Fixture model</span><span> · 5.9s</span>
+                            <Show when={state().outcome === "interrupted"}><span> · interrupted</span></Show>
+                        </text>
+                    </box>
+                </box>
+            </Show>
            </scrollbox>
           </box>
           <box height={1} flexShrink={0} />
@@ -84,7 +99,7 @@ async function fixture({ grouped = true, animations = true, expanded = false, ru
     const blocks = () => findBlocks(screen.renderer.root, new Set(["msg_fixture"]));
     const update = (duration = 2000) => adapter.update(blocks(), { group: duration, part: duration }, true, true);
     await screen.renderOnce();
-    return { ...screen, ctx, adapter, anchor, scroll, composer, state, setState, blocks, update, toggles: () => toggles,
+    return { ...screen, ctx, adapter, get anchor() { return anchor; }, scroll, composer, state, setState, blocks, update, toggles: () => toggles,
         async close() { adapter.dispose(); await screen.dispose(); style.destroy(); } };
 }
 
@@ -97,7 +112,7 @@ test("native Solid slots do not hide a thinking group, and its footer collapses 
         assert.match(s.captureCharFrame(), /Thinking: Fixture\s+· 2s/);
         s.scroll.scrollTo(s.scroll.scrollHeight); await s.renderOnce();
         assert.match(s.captureCharFrame(), /收起思考/);
-        const footer = s.anchor.getChildren().find(node => node.id === "opencode-ui:collapse")!;
+        const [footer] = collapseControls(s.anchor);
         await s.mockMouse.click(footer.x + 1, footer.y);
         s.update(); await s.renderOnce();
         assert.equal(s.toggles(), 1);
@@ -113,6 +128,7 @@ function startPlugin(s: Awaited<ReturnType<typeof fixture>>, messages: any[], st
     const route = { type: "session", sessionID: "fixture" };
     const slotInput = { sessionID: "fixture" };
     const notices: any[] = [];
+    const commands: any[] = [];
     let marker: BoxRenderable | undefined;
     const cleanup = plugin.setup({ ...s.ctx, app: { version: "2.1.2" }, options: {},
         data: { session: { status: () => status, message: { list: () => messages } } },
@@ -122,9 +138,10 @@ function startPlugin(s: Awaited<ReturnType<typeof fixture>>, messages: any[], st
                 s.composer.add(marker);
                 return () => marker?.destroyRecursively();
             } },
-        keymap: { layer() {} },
+        keymap: { layer(factory: any) { commands.push(...factory().commands); } },
     } as any) as () => void;
-    return { cleanup, notices, route, slotInput, marker: () => marker };
+    return { cleanup, notices, commands, route, slotInput, marker: () => marker,
+        setStatus(value: typeof status) { status = value; } };
 }
 
 function messagesAt(now: number, id = "msg_fixture", elapsed = 2000) {
@@ -132,6 +149,74 @@ function messagesAt(now: number, id = "msg_fixture", elapsed = 2000) {
         { type: "reasoning", text: "Current artificial thought", time: { created: now - elapsed } },
     ] }];
 }
+
+test("completed and interrupted reply footers coexist with the collapse control across group replacement", async () => {
+    for (const outcome of ["completed", "interrupted"] as const) {
+        const s = await fixture({ expanded: true, lines: 3 });
+        const messages: any[] = messagesAt(Date.now());
+        const running = startPlugin(s, messages);
+        try {
+            await s.renderOnce();
+            assert.match(s.captureCharFrame(), /收起思考/);
+            running.setStatus("idle");
+            messages[0].time.completed = Date.now();
+            if (outcome === "interrupted") messages[0].error = { type: "unknown", message: "Step interrupted" };
+            s.setState(value => ({ ...value, running: false, outcome, revision: outcome === "interrupted" ? 2 : 1 }));
+            await new Promise(resolve => setTimeout(resolve, 280));
+            await s.renderOnce();
+            assert.deepEqual(running.notices, []);
+            const frame = s.captureCharFrame();
+            assert.match(frame, /Thought · 2 steps · 2s/);
+            assert.match(frame, /Build · Fixture model · 5\.9s/);
+            if (outcome === "interrupted") assert.match(frame, /interrupted/);
+            const [footer] = collapseControls(s.anchor);
+            const replyFooter = s.scroll.getChildren().find(node => node.id === "fixture-assistant-footer")!;
+            assert.ok(footer);
+            assert.ok(footer.y + footer.height <= replyFooter.y);
+            await s.mockMouse.click(footer.x + 1, footer.y);
+            await new Promise(resolve => setTimeout(resolve, 280));
+            await s.renderOnce();
+            assert.equal(s.state().expanded, false);
+            assert.doesNotMatch(s.captureCharFrame(), /收起思考|Artificial thought line/);
+            assert.match(s.captureCharFrame(), /Build · Fixture model · 5\.9s/);
+            assert.deepEqual(running.notices, []);
+        } finally { running.cleanup(); await s.close(); }
+    }
+});
+
+test("removing the thought body removes its collapse control before the next plugin scan", async () => {
+    const s = await fixture({ expanded: true, lines: 3 });
+    try {
+        s.update(); await s.renderOnce();
+        assert.match(s.captureCharFrame(), /收起思考/);
+        s.setState(value => ({ ...value, expanded: false, running: false, outcome: "interrupted" }));
+        // Solid has removed the body, but the plugin's 250ms poll has not run.
+        await s.renderOnce();
+        assert.match(s.captureCharFrame(), /Build · Fixture model · 5\.9s · interrupted/);
+        assert.doesNotMatch(s.captureCharFrame(), /收起思考|Artificial thought line/);
+        s.update(); await s.renderOnce();
+        s.setState(value => ({ ...value, expanded: true }));
+        await s.renderOnce();
+        s.update(); await s.renderOnce();
+        assert.match(s.captureCharFrame(), /收起思考/);
+    } finally { await s.close(); }
+});
+
+test("runtime failures report the phase and error type without exposing exception content", async () => {
+    const s = await fixture({ expanded: true });
+    Object.defineProperty(s.ctx.theme.text, "muted", { get() { throw new TypeError("Artificial private failure content"); } });
+    const running = startPlugin(s, messagesAt(Date.now()));
+    try {
+        await s.renderOnce();
+        assert.equal(running.notices.length, 1);
+        assert.match(running.notices[0].message, /运行异常.*ui-enhance-status/);
+        running.commands.find(command => command.id === "ui.status").run();
+        assert.match(running.notices.at(-1).message, /OpenCode 2\.1\.2；更新思考区块 \/ TypeError/);
+        assert.doesNotMatch(JSON.stringify(running.notices), /Artificial private failure content|结构不兼容/);
+        assert.doesNotMatch(s.captureCharFrame(), /· 2s|收起思考/);
+        assert.ok(running.marker()?.isDestroyed);
+    } finally { running.cleanup(); await s.close(); }
+});
 
 test("initial anonymous groups keep a timer and collapse footer without any message boundary row", async () => {
     const s = await fixture({ rowID: "native-anonymous-group", expanded: true, lines: 60 });
@@ -143,7 +228,7 @@ test("initial anonymous groups keep a timer and collapse footer without any mess
         assert.equal(running.marker()?.getComputedLayout().height, 0);
         s.scroll.scrollTo(s.scroll.scrollHeight); await s.renderOnce();
         assert.match(s.captureCharFrame(), /收起思考/);
-        const footer = s.anchor.getChildren().find(node => node.id === "opencode-ui:collapse")!;
+        const [footer] = collapseControls(s.anchor);
         await s.mockMouse.click(footer.x + 4, footer.y);
         await new Promise(resolve => setTimeout(resolve, 280));
         await s.renderOnce();
@@ -265,7 +350,7 @@ test("changing animation settings and finishing thinking retain native controls 
             await s.renderOnce();
             s.update(); await s.renderOnce();
             assert.equal((s.captureCharFrame().match(/· 2s/g) ?? []).length, 1);
-            assert.equal(s.anchor.getChildren().filter(node => node.id === "opencode-ui:collapse").length, 1);
+            assert.equal(collapseControls(s.anchor).length, 1);
         }
         s.setState(value => ({ ...value, running: false }));
         await s.renderOnce();
