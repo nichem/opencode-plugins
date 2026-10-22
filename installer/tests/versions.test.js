@@ -35,7 +35,7 @@ test("tree queries are deduplicated and failures remain unknown", async () => {
         calls.push(ref);
         if (ref === old) throw new Error("rate limited");
         return new Map([["opencode-goal", "same"]]);
-    });
+    }, { readGitTrees: async () => { throw new Error("Git unavailable"); } });
     assert.deepEqual(calls.sort(), [old, latest].sort());
     assert.equal(statuses(configs, latest, "", trees)[1].state, "unknown");
     assert.equal(statuses(configs, latest, "", trees)[0].state, "current");
@@ -94,9 +94,49 @@ test("a missing cached source cannot borrow another ref or URL alias's version",
 test("invalid, unresolved, truncated and failed API responses cannot imply latest", async () => {
     await assert.rejects(revisionTrees("main", () => assert.fail("invalid request")));
     await assert.rejects(revisionTrees(old, async () => ({ ok: false, status: 403 })));
+    await assert.rejects(revisionTrees(old, async () => ({ ok: false, status: 403,
+        headers: new Map([["x-ratelimit-remaining", "0"]]) })), /匿名请求额度已用尽/);
     await assert.rejects(revisionTrees(old, async () => ({ ok: true, json: async () => [{ sha: latest }] })));
     let calls = 0;
     await assert.rejects(revisionTrees(old, async () => ({ ok: true, json: async () => ++calls === 1
         ? [{ sha: old, commit: { tree: { sha: root } } }]
         : { truncated: true, tree: [] } })));
+});
+
+test("API rate limiting falls back to Git for failed revisions and preserves directory comparisons", async () => {
+    const configs = [cfg("server", "opencode-providers", old), cfg("server", "opencode-goal", old), cfg("tui", "opencode-goal", old)];
+    const calls = [], messages = [];
+    const trees = await loadVersionTrees(configs, latest, "", async ref => {
+        if (ref === old) throw new Error("GitHub API 匿名请求额度已用尽 (403)");
+        return new Map([["opencode-providers", "new"], ["opencode-goal", "same"]]);
+    }, { readGitTrees: async refs => {
+        calls.push(refs);
+        return new Map([[old, new Map([["opencode-providers", "old"], ["opencode-goal", "same"]])]]);
+    }, report: message => messages.push(message) });
+    assert.deepEqual(calls, [[old]]);
+    assert.deepEqual(statuses(configs, latest, "", trees).slice(0, 2).map(p => p.state), ["update", "current"]);
+    assert.equal(messages.length, 1);
+    assert.match(messages[0], /403.*Git/);
+});
+
+test("Git fallback handles failure of all API requests without treating unknown versions as latest", async () => {
+    const configs = [cfg("server", "opencode-providers", old)];
+    const fail = async () => { throw new Error("fetch failed"); };
+    const messages = [];
+    const trees = await loadVersionTrees(configs, latest, "", fail, {
+        readGitTrees: async refs => {
+            assert.deepEqual(new Set(refs), new Set([old, latest]));
+            return new Map(refs.map(ref => [ref, new Map([["opencode-providers", root]])]));
+        },
+    });
+    assert.equal(statuses(configs, latest, "", trees)[0].state, "current");
+    for (const readGitTrees of [fail, async () => new Map([[latest, trees.get(latest)]])]) {
+        messages.length = 0;
+        const unknown = await loadVersionTrees(configs, latest, "", fail, { readGitTrees, report: message => messages.push(message) });
+        assert.equal(statuses(configs, latest, "", unknown)[0].state, "unknown");
+        assert.equal(messages.length, 2);
+    }
+    await loadVersionTrees(configs, latest, "", async () => new Map(), {
+        readGitTrees: () => assert.fail("successful API requests do not need Git"),
+    });
 });

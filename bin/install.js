@@ -35,7 +35,7 @@ async function main() {
             console.log("正在检查 GitHub 版本与本机安装状态…");
             try { latest = await latestRevision(); } catch { console.log("GitHub 版本检查失败；检查网络和 Git 后返回重试。未修改配置。"); continue; }
             try { installed = (await opencode("list")).stdout; } catch { console.log("无法读取缓存版本，未知版本可选择重新安装。"); }
-            trees = await loadVersionTrees(configs, latest, installed);
+            trees = await loadVersionTrees(configs, latest, installed, undefined, { report: message => console.log(message) });
         }
         const items = statuses(configs, latest, installed, trees).filter(p => action !== "remove" || p.state !== "absent");
         if (!items.length) { console.log("没有可卸载的插件。"); continue; }
