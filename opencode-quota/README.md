@@ -30,14 +30,14 @@ npx github:nichem/opencode-plugins
 
 ## 内置 OpenCode Go
 
-通过 `/connect` 连接 OpenCode Go，选择它的模型。插件通过 OpenCode 连接管理获取当前激活账号的 Key，调用固定地址：
+通过 `/connect` 连接 OpenCode Go，选择它的模型。新版 OpenCode 可能把 Go 供应商映射到 OpenCode Console 集成；插件优先读取 `opencode-go` 集成中的激活 Key，没有激活的 Go 连接时再回退到当前供应商映射的连接（例如 Console OAuth）。调用固定地址：
 
 ```text
 GET https://opencode.ai/zen/go/v1/usage
-Authorization: Bearer <当前 Go 连接的 Key>
+Authorization: Bearer <当前 Go Key 或 Console OAuth access token>
 ```
 
-展示 5 小时、每周、每月三个窗口的剩余百分比和重置时间。数据使用服务端返回的使用率，不按模型价格估算金额，不查询网页 Cookie，不读取旧版 `auth.json`、`token.txt` 或环境变量凭据。兼容原版 `rollingUsage/usagePercent/resetInSec` 和新版 `usage.rolling/percent/resetsAt` 数据。
+同一集成存在多个连接时以激活连接为准。Go Key 和 Console 账号不是同一账号时，优先显示 Go Key 对应账号的额度；切换激活账号后会重新查询。展示 5 小时、每周、每月三个窗口的剩余百分比和重置时间。数据使用服务端返回的使用率，不按模型价格估算金额，不查询网页 Cookie，不读取旧版 `auth.json`、`token.txt` 或环境变量凭据。兼容原版 `rollingUsage/usagePercent/resetInSec` 和新版 `usage.rolling/percent/resetsAt` 数据。
 
 接口参考：[OpenCode 官方路由](https://github.com/anomalyco/opencode/blob/v2.1.0/packages/console/app/src/lib/inference-proxy.ts)、[原始额度 API 实现](https://github.com/anomalyco/opencode/pull/16513/files)。
 

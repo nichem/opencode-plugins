@@ -139,8 +139,34 @@ test("Kimi accepts a saved OAuth access token without refreshing it or sharing i
   const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, { resolve: async () => oauth })
   try {
     assert.equal((await service.query({ providerID: "kimi-for-coding", modelID: "one" }, new AbortController().signal)).status, "ready")
-    for (const providerID of ["opencode-go", "deepseek", "zhipuai-coding-plan", "zai-coding-plan"])
+    for (const providerID of ["deepseek", "zhipuai-coding-plan", "zai-coding-plan"])
       assert.equal((await service.query({ providerID, modelID: "one" }, new AbortController().signal)).status, "error")
+    assert.equal(fetch.mock.callCount(), 1)
+  } finally { service.close() }
+})
+
+test("OpenCode Go accepts the Console OAuth token without enabling it for key-only built-ins", async t => {
+  const oauth = { type: "oauth" as const, access: "fixture-go-oauth-access", refresh: "fixture-go-oauth-refresh", expires: Date.now() + 60000 }
+  const fetch = t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, GO_USAGE_URL)
+    assert.equal(new Headers(init.headers).get("authorization"), `Bearer ${oauth.access}`)
+    return Response.json({ usage: {
+      rolling: { percent: 10, resetsAt: "2026-11-01T00:00:00Z" },
+      weekly: { percent: 20 },
+      monthly: { percent: 30 },
+    } })
+  })
+  const service = new QuotaService({ timeoutMs: 1000, providers: new Map() }, { resolve: async () => oauth })
+  try {
+    const result = await service.query({ providerID: "opencode-go", modelID: "one" }, new AbortController().signal)
+    assert.equal(result.status, "ready")
+    assert.deepEqual(result.items.map(item => [item.label, item.used]),
+      [["5 小时", 10], ["每周", 20], ["每月", 30]])
+    assert.equal(fetch.mock.callCount(), 1)
+    for (const providerID of ["deepseek", "zhipuai-coding-plan", "zai-coding-plan"]) {
+      const rejected = await service.query({ providerID, modelID: "one" }, new AbortController().signal)
+      assert.equal(rejected.status, "error")
+    }
     assert.equal(fetch.mock.callCount(), 1)
   } finally { service.close() }
 })

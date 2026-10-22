@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { allowsBuiltin, QuotaEndpointError } from "./src/builtins.ts"
+import { resolveConnection } from "./src/connection.ts"
 import { options } from "./src/options.ts"
 import { QuotaRPC } from "./src/rpc.ts"
 import { QuotaService } from "./src/service.ts"
@@ -15,10 +16,7 @@ export default Plugin.define({
           const model = models.find(item => item.providerID === providerID && item.id === modelID)
           if (!model || !allowsBuiltin(providerID, provider, model)) throw new QuotaEndpointError()
         }
-        if (!provider.integrationID) return
-        const connection = await ctx.integration.connection.active(provider.integrationID)
-        if (connection?.type !== "credential") return
-        return ctx.integration.connection.resolve(connection)
+        return resolveConnection(providerID, provider.integrationID, ctx.integration.connection)
       },
     })
     try {

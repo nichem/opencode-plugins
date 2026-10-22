@@ -16,7 +16,7 @@ const kimiCN: Builtin = { name: "Kimi For Coding", origin: "https://api.kimi.com
 
 // Match exact OpenCode provider IDs; never try another region with the same credential.
 export const builtins: ReadonlyMap<string, Builtin> = new Map([
-  ["opencode-go", { name: "OpenCode Go", origin: "https://opencode.ai",
+  ["opencode-go", { name: "OpenCode Go", origin: "https://opencode.ai", oauth: true,
     defaultPackages: ["@opencode/ai/providers/opencode"], query: queryGo }],
   ["deepseek", { name: "DeepSeek", origin: "https://api.deepseek.com",
     defaultPackages: ["@opencode/ai/providers/deepseek"], query: queryDeepSeek }],
