@@ -1,15 +1,17 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、管理持续执行的目标、逐条删除末尾 AI 消息、显示当前供应商额度、选择网络搜索供应商、优化思考区块的计时和收起操作，以及为 DeepSeek 注入协作行为提示词。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、兼容旧版目标管理、逐条删除末尾 AI 消息、显示当前供应商额度、选择网络搜索供应商、优化思考区块的计时和收起操作，以及为 DeepSeek 注入协作行为提示词。
 
 原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和搜索选择器针对 **OpenCode 2.1.0** 适配，UI 优化允许 **OpenCode 2.x** 启用，渲染适配基于 **2.1.2** 验证；DeepSeek 行为增强基于 **2.2.0** 验证。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
+
+**OpenCode 2.2.1 起已原生内置 `/goal`。** 新版安装器不再提供 Goal 插件的安装 / 更新，但保留新旧地址识别与卸载入口；OpenCode 旧版本仍可安装。已有用户请按下文迁移到原生 Goal。
 
 ## 插件一览
 
 | 插件 | 功能 | 使用入口 | 配置位置 |
 | --- | --- | --- | --- |
 | [opencode-providers](./plugins/opencode-providers/README.md) | Qoder CN 与 Krill Codex 接入、模型发现、账号切换 | `/connect`、`/models` | `opencode.json` |
-| [opencode-goal](./plugins/opencode-goal/README.md) | 设置目标、自动续跑、暂停恢复、完成状态提示 | `/goal` | `opencode.json` + `cli.json` |
+| [opencode-goal（旧版兼容）](./plugins/opencode-goal/README.md) | 仅用于 OpenCode < 2.2.1；新版使用原生目标管理 | `/goal` | 仅旧版需要 `opencode.json` + `cli.json` |
 | [opencode-message-delete](./plugins/opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./plugins/opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
 | [opencode-quota](./plugins/opencode-quota/README.md) | 当前供应商额度，内置 Go、DeepSeek、智谱 / Z.AI Coding Plan、Kimi For Coding，支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
@@ -31,7 +33,7 @@ npx github:nichem/opencode-plugins
 
 安装器直接从 GitHub 获取，**不发布到 npm**；首次运行时 npm 可能提示确认下载运行。
 
-- **安装 / 更新**：空格多选、回车执行。未安装、有更新或配置不完整的插件可选；最新版仍显示，但不可选。默认不选任何项，直接回车返回。
+- **安装 / 更新**：空格多选、回车执行。未安装、有更新或配置不完整的插件可选；最新版仍显示，但不可选。OpenCode 2.2.1+ 中 Goal 显示“已原生内置”，不可安装或更新，已配置的旧插件可从卸载页移除。默认不选任何项，直接回车返回。
 - **卸载**：多选已配置的插件，再确认卸载；确认默认选择否。仅移除配置，保留账号、凭据、缓存和插件数据。
 - **返回 / 退出**：子菜单按 `Esc` 返回，主菜单选择退出，或按 `Ctrl+C`。
 
@@ -42,6 +44,8 @@ npx github:nichem/opencode-plugins
 版本按各插件整个目录的 Git tree hash 判断：比较已安装提交中实际安装路径与 `main` 最新提交中 `plugins/<插件目录>` 的内容。内容相同且使用新地址才显示最新版；仅搬目录时显示需要迁移，不误报内容更新。其他插件、根目录文档或安装器的修改不会触发该插件的更新提示；插件目录内的文档和测试变化仍算更新，改动撤销后内容相同也不会提示更新。安装时仍固定到本次检查的完整提交 SHA；后续更新请重新运行上面的命令。
 
 安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的新旧目录、不同分支、标签或地址写法不会互借版本。Goal、额度侧栏、搜索选择器和 DeepSeek 行为增强均分别比较两个入口，全部一致才显示最新版。优先通过 GitHub API 查询提交元数据，以及根目录和 `plugins/` 两层非递归 tree；不进入单个插件目录。API 限流或请求失败时显示原因，并自动改用 Git 查询，不需要 GitHub 凭据。
+
+已被当前 OpenCode 版本原生替代的插件不再查询旧安装提交或提示更新；其他插件仍按上述目录内容比较。退役只改变安装器的选择，不会自动修改用户配置或删除旧目标数据。
 
 Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，再单独取所需根目录和 `plugins/` 容器 tree，不获取单个插件 tree、不检出文件、不请求文件正文，完成后清理临时目录。缓存短提交号通过远端分支历史解析；仅由标签保留的提交，结合原安装地址查询轻量或附注标签的实际提交，并核对缓存短 SHA，避免把标签移动后的版本误认为已安装版本。批量获取提交或目录失败时逐项重试，失效版本只影响对应路径，其他查询结果继续保留。同一次检查复用相同提交的查询结果。
 
@@ -57,13 +61,12 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 
 ### 服务端：`opencode.json`
 
-负责供应商接入、预设 agent、目标执行、额度查询、搜索选择和 DeepSeek 行为提示词；使用 `opencode.jsonc` 也可以，无需同时维护两份。
+负责供应商接入、预设 agent、额度查询、搜索选择和 DeepSeek 行为提示词；使用 `opencode.jsonc` 也可以，无需同时维护两份。以下示例面向 OpenCode 2.2.1+，不包含已被原生替代的 Goal 插件。
 
 ```json
 {
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-goal",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-agents",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-websearch",
@@ -74,13 +77,12 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 
 ### 终端界面：`cli.json`
 
-负责 Goal 的状态通知、删除消息命令、额度侧栏、搜索选择弹窗、思考 UI 优化和 DeepSeek 行为增强开关。
+负责删除消息命令、额度侧栏、搜索选择弹窗、思考 UI 优化和 DeepSeek 行为增强开关。新版原生 Goal 的状态界面无需另装插件。
 
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-goal",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-message-delete",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-websearch",
@@ -90,7 +92,7 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 }
 ```
 
-Goal、额度侧栏、搜索选择器和 DeepSeek 行为增强在两个文件中使用各自相同的地址，分别加载服务端和界面入口。Goal 仅配置服务端可以执行目标，但缺少界面状态通知；额度侧栏、搜索选择器和 DeepSeek 行为增强开关需要各自的两个入口共同工作。
+额度侧栏、搜索选择器和 DeepSeek 行为增强在两个文件中使用各自相同的地址，分别加载服务端和界面入口。OpenCode < 2.2.1 使用旧 Goal 插件时，也需要同时配置两个入口；安装方法见 [旧版 Goal 文档](./plugins/opencode-goal/README.md)。
 
 配置完成后执行 `opencode reload`，并重新打开终端界面。
 
@@ -125,16 +127,19 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ### 持续执行目标
 
+OpenCode 2.2.1+ 使用原生 Goal，无需安装本仓库的 Goal 插件：
+
 ```text
 /goal 完成这次重构并验证相关功能
-/goal append 补充一项要求
 /goal pause
 /goal resume
 /goal
 /goal clear
 ```
 
-目标活跃时自动续跑，由模型通过 `update_goal` 标记完成，并原样传回续跑提示中的目标版本。运行中替换或追加目标后，旧上下文的完成调用及后续重试都会被拒绝，新目标继续执行。用户中断或执行失败会暂停目标；暂停不会主动中断正在执行的请求。本版本基于 `mirsella/opencode-goal 0.4.3` 迁移，详细行为见 [Goal 文档](./plugins/opencode-goal/README.md)。
+原生 Goal 自动续跑，每轮结束后由当前会话模型额外审查目标是否完成，带有停滞检测和轮数上限，TUI 和桌面端均有状态界面。[官方发布说明](https://github.com/anomalyco/opencode/releases/tag/v2.2.1)
+
+OpenCode 旧版本可继续使用本仓库基于 `mirsella/opencode-goal 0.4.3` 迁移的插件。`append`、累计耗时和 `update_goal` 是旧插件行为，详细说明见 [旧版 Goal 文档](./plugins/opencode-goal/README.md)。
 
 ### 删除末尾 AI 消息
 
@@ -186,9 +191,15 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ## 更新与迁移
 
+### 从 Goal 插件迁移到原生 Goal
+
+升级到 OpenCode 2.2.1+ 后，先暂停旧目标并记下未完成的目标内容。运行 `npx github:nichem/opencode-plugins`，在“卸载”中选择 `opencode-goal` 并确认，安装器会备份后移除服务端和 TUI 对应的新旧地址条目，保留账号、凭据、缓存和旧目标数据；仅配置其中一个入口时同样可以卸载。
+
+执行 `opencode reload` 并重新打开 TUI，再通过原生 `/goal <目标>` 重新设置目标。旧插件目标不会自动转成原生目标。项目配置、其他来源或本地路径加载的旧插件不在安装器管理范围内，需自行移除对应条目。源码保留供旧版使用，不自动卸载用户的现有插件。
+
 ### 从根目录安装地址迁移
 
-旧地址形如 `#<ref>::path:opencode-goal`，新地址为 `#<ref>::path:plugins/opencode-goal`。运行新版 `npx github:nichem/opencode-plugins`，在“安装 / 更新”中选择显示“需要迁移”的插件即可；安装器备份后更新服务端和 TUI 对应入口，保留其他插件、选项及顺序。卸载也识别两种地址，不删除账号、凭据、缓存或插件数据。包名和插件 ID 保持不变。
+旧地址形如 `#<ref>::path:opencode-quota`，新地址为 `#<ref>::path:plugins/opencode-quota`。运行新版 `npx github:nichem/opencode-plugins`，在“安装 / 更新”中选择显示“需要迁移”的插件即可；安装器备份后更新服务端和 TUI 对应入口，保留其他插件、选项及顺序。卸载也识别两种地址，不删除账号、凭据、缓存或插件数据。包名和插件 ID 保持不变。新版 OpenCode 中已退役的 Goal 应按上节卸载，旧版中仍可迁移地址。
 
 固定旧提交 SHA 的安装仍使用历史目录，不会因最新提交搬迁而立即失效。手动使用 `#main` 旧路径的配置，请先通过新版安装器迁移，或手动将路径改为 `plugins/<插件目录>`；直接执行 `opencode plugin update` 不会替你改配置中的目录路径，可能找不到已搬走的旧目录。项目配置不在安装器管理范围内，需要自行更新对应地址。
 

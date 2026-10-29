@@ -7,6 +7,6 @@
   "bin": { "opencode-plugins": "bin/install.js" },
   "files": ["bin", "installer", "README.md"],
   "engines": { "node": ">=24" },
-  "scripts": { "test": "node --test installer/tests/*.test.js", "check": "node --check bin/install.js && node --check installer/config.js && node --check installer/status.js" },
+  "scripts": { "test": "node --test installer/tests/*.test.js", "check": "node --check bin/install.js && node --check installer/catalog.js && node --check installer/config.js && node --check installer/status.js && node --check installer/policy.js" },
   "dependencies": { "@inquirer/prompts": "8.7.3", "jsonc-parser": "3.3.1" }
 }

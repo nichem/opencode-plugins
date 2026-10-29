@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { catalog, identify, pluginPath, repo } from "./catalog.js";
+import { nativeReplacement } from "./policy.js";
 const exec = promisify(execFile);
 export async function opencode(command) {
     const commands = { version: ["--version"], list: ["plugin", "list"], reload: ["reload"] };
@@ -169,9 +170,10 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
 }
 
 export async function loadVersionTrees(configs, latest, installed = "", readTrees = revisionTrees,
-    { readGitTrees = gitRevisionTrees, report = () => {} } = {}) {
+    { readGitTrees = gitRevisionTrees, report = () => {}, hostVersion } = {}) {
     const versions = installedVersions(installed);
-    const revisions = new Set(catalog.flatMap(p => configuredInstallations(configs, p.id, versions)).map(item => item.revision).filter(Boolean));
+    const supported = catalog.filter(plugin => !nativeReplacement(plugin, hostVersion));
+    const revisions = new Set(supported.flatMap(p => configuredInstallations(configs, p.id, versions)).map(item => item.revision).filter(Boolean));
     if (![...revisions].some(ref => ref !== latest)) return new Map();
     revisions.add(latest);
     const failures = new Map();
@@ -185,7 +187,7 @@ export async function loadVersionTrees(configs, latest, installed = "", readTree
             const sources = new Map();
             for (const config of configs) for (const entry of config.data.plugins ?? []) {
                 const item = identify(entry);
-                if (!item) continue;
+                if (!item || !supported.some(plugin => plugin.id === item.id)) continue;
                 const source = typeof entry === "string" ? entry : entry.package;
                 const ref = versions.get(source);
                 if (!ref || ref.length === 40 || !failures.has(ref)) continue;
@@ -202,10 +204,13 @@ export async function loadVersionTrees(configs, latest, installed = "", readTree
     return trees;
 }
 
-export function statuses(configs, latest, installed = "", trees = new Map()) {
+export function statuses(configs, latest, installed = "", trees = new Map(), { hostVersion } = {}) {
     const versions = installedVersions(installed);
     return catalog.map(plugin => {
         const present = configs.filter(c => (c.data.plugins ?? []).some(e => identify(e)?.id === plugin.id));
+        const replacement = nativeReplacement(plugin, hostVersion);
+        if (replacement) return { ...plugin, replacement, state: present.length ? "retired" : "absent",
+            label: present.length ? "已原生内置 · 建议卸载旧插件" : "已原生内置 · 无需安装" };
         if (!present.length) return { ...plugin, state: "absent", label: "未安装" };
         if (!plugin.targets.every(kind => present.some(c => c.kind === kind))) return { ...plugin, state: "repair", label: "配置不完整 · 可修复" };
         if (!latest) return { ...plugin, state: "unknown", label: "更新检查失败 · 请重试" };

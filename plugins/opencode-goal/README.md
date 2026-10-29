@@ -1,10 +1,23 @@
-# opencode-goal（个人维护的 2.x 版本）
+# opencode-goal（旧版兼容）
+
+**OpenCode 2.2.1 起已原生内置 `/goal`，本插件在这些版本中停止提供安装 / 更新，建议迁移到原生功能。** 安装器仍识别本仓库新旧 Git 地址，并保留卸载入口；源码和旧插件数据保留，OpenCode 2.2.0 及更早版本仍可安装使用。[官方发布说明](https://github.com/anomalyco/opencode/releases/tag/v2.2.1)
 
 基于 `mirsella/opencode-goal 0.4.3` 迁移，适配 OpenCode **2.0.27**。不是同名 npm 包的官方新版。源码为 TypeScript，OpenCode 直接加载；本地检查使用 Node.js 24+。
 
-## 安装
+## 迁移到原生 Goal
 
-先删除原来的 `opencode-goal` npm 配置条目，避免两个插件同时注册 `/goal`。
+1. 暂停旧目标，记录未完成的目标内容。
+2. 执行 `npx github:nichem/opencode-plugins`，在“卸载”中选择 `opencode-goal` 并确认，同时移除服务端和 TUI 的旧插件入口。仅配置了其中一个入口时也可卸载；不会删除凭据、缓存或旧目标数据。
+3. 执行 `opencode reload`，并重新打开 TUI。
+4. 使用原生 `/goal <目标>` 重新设置目标；旧插件的目标不会自动转成原生目标。
+
+原生 Goal 提供 `/goal pause`、`/goal resume`、`/goal clear`，并在输入区显示状态。旧插件的 `append`、累计耗时与 `update_goal` 属于本插件功能，迁移后按原生功能的行为使用。
+
+安装器只管理本仓库 GitHub 地址对应的全局配置；项目配置、其他来源或本地路径加载的旧 Goal 需自行移除对应条目。新版安装页仍显示本插件，但不可选；卸载页只在存在本仓库配置时显示。
+
+## 安装（仅旧版 OpenCode）
+
+以下安装方式用于尚未内置 Goal 的 OpenCode 旧版本。先删除原来的 `opencode-goal` npm 配置条目，避免两个插件同时注册 `/goal`。
 
 ```powershell
 opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-goal'
