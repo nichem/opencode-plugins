@@ -1,0 +1,1 @@
+{ "name": "deepseek-behavior-fixture", "private": true, "type": "module", "exports": "./index.js" }
