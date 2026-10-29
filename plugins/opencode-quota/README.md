@@ -17,7 +17,7 @@ npx github:nichem/opencode-plugins
 ```json
 {
   "plugins": [
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota"
   ]
 }
 ```
@@ -71,7 +71,7 @@ Kimi 调用 `GET https://api.kimi.com/coding/v1/usages`，国际站为 `https://
 {
   "plugins": [
     {
-      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota",
+      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
       "options": {
         "timeoutMs": 10000,
         "providers": {
@@ -133,7 +133,7 @@ export default async function quota({ providerID, modelID, credential, signal })
 {
   "plugins": [
     {
-      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-quota",
+      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
       "options": { "refreshMs": 60000, "requestTimeoutMs": 15000 }
     }
   ]

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { revisionTrees, loadVersionTrees, statuses } from "../status.js";
-import { specifier } from "../catalog.js";
+import { pluginPath, specifier } from "../catalog.js";
 
 const old = "a".repeat(40), latest = "b".repeat(40), root = "c".repeat(40);
 const cfg = (kind, id, ref) => ({ kind, data: { plugins: [specifier(id, ref)] } });
@@ -9,11 +9,11 @@ const cfg = (kind, id, ref) => ({ kind, data: { plugins: [specifier(id, ref)] } 
 test("only changed plugin directories need updates, including both Goal entrances", () => {
     const configs = [cfg("server", "opencode-providers", old), cfg("server", "opencode-goal", old), cfg("tui", "opencode-goal", latest)];
     const trees = new Map([
-        [old, new Map([["opencode-providers", "old"], ["opencode-goal", "same"]])],
-        [latest, new Map([["opencode-providers", "new"], ["opencode-goal", "same"]])],
+        [old, new Map([["plugins/opencode-providers", "old"], ["plugins/opencode-goal", "same"]])],
+        [latest, new Map([["plugins/opencode-providers", "new"], ["plugins/opencode-goal", "same"]])],
     ]);
     assert.deepEqual(statuses(configs, latest, "", trees).slice(0, 2).map(p => p.state), ["update", "current"]);
-    trees.get(old).set("opencode-goal", "changed");
+    trees.get(old).set("plugins/opencode-goal", "changed");
     assert.equal(statuses(configs, latest, "", trees)[1].state, "update");
     trees.delete(old);
     assert.equal(statuses(configs, latest, "", trees)[1].state, "unknown");
@@ -21,7 +21,7 @@ test("only changed plugin directories need updates, including both Goal entrance
 
 test("unchanged content after unrelated commits or reverts stays current", () => {
     const configs = [cfg("server", "opencode-providers", old)];
-    const trees = new Map([old, latest].map(ref => [ref, new Map([["opencode-providers", "same"]])]));
+    const trees = new Map([old, latest].map(ref => [ref, new Map([["plugins/opencode-providers", "same"]])]));
     assert.equal(statuses(configs, latest, "", trees)[0].state, "current");
     trees.get(latest).clear();
     assert.equal(statuses(configs, latest, "", trees)[0].state, "unknown");
@@ -34,7 +34,7 @@ test("tree queries are deduplicated and failures remain unknown", async () => {
     const trees = await loadVersionTrees(configs, latest, "", async ref => {
         calls.push(ref);
         if (ref === old) throw new Error("rate limited");
-        return new Map([["opencode-goal", "same"]]);
+        return new Map([["plugins/opencode-goal", "same"]]);
     }, { readGitTrees: async () => { throw new Error("Git unavailable"); } });
     assert.deepEqual(calls.sort(), [old, latest].sort());
     assert.equal(statuses(configs, latest, "", trees)[1].state, "unknown");
@@ -56,7 +56,7 @@ test("short cached revisions resolve through metadata and nonrecursive root tree
     assert.ok(urls[1].endsWith(`git/trees/${root}`));
     const configs = [cfg("server", "opencode-providers", "main")];
     const installed = `opencode-providers ${old.slice(0, 7)} ${specifier("opencode-providers", "main")}`;
-    const loaded = await loadVersionTrees(configs, latest, installed, async () => new Map([["opencode-providers", root]]));
+    const loaded = await loadVersionTrees(configs, latest, installed, async () => new Map([["plugins/opencode-providers", root]]));
     assert.equal(statuses(configs, latest, installed, loaded)[0].state, "current");
 });
 
@@ -68,11 +68,11 @@ test("different Goal refs retain their own cached revisions regardless of list o
         const calls = [];
         const trees = await loadVersionTrees(configs, latest, installed, async ref => {
             calls.push(ref);
-            return new Map([[id, ref.startsWith(old.slice(0, 7)) ? "old-tree" : "new-tree"]]);
+            return new Map([[pluginPath(id), ref.startsWith(old.slice(0, 7)) ? "old-tree" : "new-tree"]]);
         });
         assert.deepEqual(new Set(calls), new Set([old.slice(0, 7), latest.slice(0, 7), latest]));
         assert.equal(statuses(configs, latest, installed, trees)[1].state, "update");
-        trees.get(old.slice(0, 7)).set(id, "new-tree");
+        trees.get(old.slice(0, 7)).set(pluginPath(id), "new-tree");
         assert.equal(statuses(configs, latest, installed, trees)[1].state, "current");
     }
 });
@@ -83,11 +83,11 @@ test("a missing cached source cannot borrow another ref or URL alias's version",
     const installed = `${id} ${latest} ${specifier(id, "main")}`;
     const trees = await loadVersionTrees(configs, latest, installed, () => assert.fail("unnecessary query"));
     assert.equal(statuses(configs, latest, installed, trees)[1].state, "repair");
-    const alias = `github:nichem/opencode-plugins#main::path:${id}`;
+    const alias = `github:nichem/opencode-plugins#main::path:plugins/${id}`;
     configs[1].data.plugins = [alias];
     assert.equal(statuses(configs, latest, installed)[1].state, "repair");
     const both = `${installed}\n- ${old} ${alias}`;
-    const versions = await loadVersionTrees(configs, latest, both, async ref => new Map([[id, ref]]));
+    const versions = await loadVersionTrees(configs, latest, both, async ref => new Map([[pluginPath(id), ref]]));
     assert.equal(statuses(configs, latest, both, versions)[1].state, "update");
 });
 
@@ -108,10 +108,10 @@ test("API rate limiting falls back to Git for failed revisions and preserves dir
     const calls = [], messages = [];
     const trees = await loadVersionTrees(configs, latest, "", async ref => {
         if (ref === old) throw new Error("GitHub API 匿名请求额度已用尽 (403)");
-        return new Map([["opencode-providers", "new"], ["opencode-goal", "same"]]);
+        return new Map([["plugins/opencode-providers", "new"], ["plugins/opencode-goal", "same"]]);
     }, { readGitTrees: async refs => {
         calls.push(refs);
-        return new Map([[old, new Map([["opencode-providers", "old"], ["opencode-goal", "same"]])]]);
+        return new Map([[old, new Map([["plugins/opencode-providers", "old"], ["plugins/opencode-goal", "same"]])]]);
     }, report: message => messages.push(message) });
     assert.deepEqual(calls, [[old]]);
     assert.deepEqual(statuses(configs, latest, "", trees).slice(0, 2).map(p => p.state), ["update", "current"]);
@@ -126,7 +126,7 @@ test("Git fallback handles failure of all API requests without treating unknown 
     const trees = await loadVersionTrees(configs, latest, "", fail, {
         readGitTrees: async refs => {
             assert.deepEqual(new Set(refs), new Set([old, latest]));
-            return new Map(refs.map(ref => [ref, new Map([["opencode-providers", root]])]));
+            return new Map(refs.map(ref => [ref, new Map([["plugins/opencode-providers", root]])]));
         },
     });
     assert.equal(statuses(configs, latest, "", trees)[0].state, "current");

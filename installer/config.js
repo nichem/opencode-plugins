@@ -2,7 +2,8 @@ import { readFile, mkdir, writeFile, copyFile, unlink, rename } from "node:fs/pr
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { parse, modify, applyEdits } from "jsonc-parser";
+import { isDeepStrictEqual } from "node:util";
+import { parse, parseTree, findNodeAtLocation, createScanner, SyntaxKind, modify, applyEdits } from "jsonc-parser";
 import { identify, specifier } from "./catalog.js";
 
 export function configPaths(env = process.env) {
@@ -23,26 +24,97 @@ export async function readConfigs(paths = configPaths()) {
     return result;
 }
 
+function mergeFields(left, right) {
+    let result = { ...left };
+    for (const [key, value] of Object.entries(right)) {
+        if (!Object.hasOwn(result, key)) result = { ...result, [key]: value };
+        else if (!isDeepStrictEqual(result[key], value)) {
+            const before = result[key];
+            if (!before || !value || typeof before !== "object" || typeof value !== "object"
+                || Array.isArray(before) || Array.isArray(value)) throw new Error("Conflicting duplicate plugin fields");
+            result = { ...result, [key]: mergeFields(before, value) };
+        }
+    }
+    return result;
+}
+
+function updatedEntry(matches, plugin, revision, path) {
+    const objects = matches.filter(entry => entry && typeof entry === "object");
+    if (!objects.length) return specifier(plugin.id, revision);
+    let fields = {};
+    try {
+        for (const { package: _source, ...rest } of objects) fields = mergeFields(fields, rest);
+    } catch {
+        throw new Error(`${plugin.id} 在 ${path} 存在冲突的重复配置，请先合并选项后重试（未修改配置）`);
+    }
+    return { ...objects[0], ...fields, package: specifier(plugin.id, revision) };
+}
+
+function removeArrayEntry(text, index) {
+    const array = findNodeAtLocation(parseTree(text), ["plugins"]);
+    const nodes = array.children, node = nodes[index];
+    const edits = [{ offset: node.offset, length: node.length, content: "" }];
+    // jsonc-parser 3.3.1 truncates the last-item removal range. Remove the
+    // value and its separator explicitly, retaining surrounding comments.
+    const start = index === nodes.length - 1 && index > 0
+        ? nodes[index - 1].offset + nodes[index - 1].length : node.offset + node.length;
+    const end = index === nodes.length - 1 && index > 0
+        ? node.offset : nodes[index + 1]?.offset ?? array.offset + array.length - 1;
+    const scanner = createScanner(text, true);
+    scanner.setPosition(start);
+    for (let token = scanner.scan(); token !== SyntaxKind.EOF && scanner.getTokenOffset() < end; token = scanner.scan()) {
+        if (token === SyntaxKind.CommaToken) {
+            edits.push({ offset: scanner.getTokenOffset(), length: scanner.getTokenLength(), content: "" });
+            break;
+        }
+    }
+    return applyEdits(text, edits);
+}
+
 export function planChanges(configs, selected, action, revision) {
     return configs.map(config => {
         let entries = [...(config.data.plugins ?? [])];
+        let next = config.original ?? "{}\n";
+        const edit = (path, value, insertion = false) => {
+            next = applyEdits(next, modify(next, path, value, { isArrayInsertion: insertion,
+                formattingOptions: { insertSpaces: true, tabSize: 2, eol: next.includes("\r\n") ? "\r\n" : "\n" } }));
+        };
+        const update = (path, before, after) => {
+            if (isDeepStrictEqual(before, after)) return;
+            if (before && after && typeof before === "object" && typeof after === "object" && !Array.isArray(before) && !Array.isArray(after)) {
+                for (const key of Object.keys(after)) update([...path, key], before[key], after[key]);
+            } else edit(path, after);
+        };
         for (const plugin of selected) {
-            const position = entries.findIndex(entry => identify(entry)?.id === plugin.id);
-            const matches = entries.filter(entry => identify(entry)?.id === plugin.id);
-            entries = entries.filter(entry => identify(entry)?.id !== plugin.id);
-            if (action === "remove" || !plugin.targets.includes(config.kind)) continue;
+            const positions = entries.flatMap((entry, index) => identify(entry)?.id === plugin.id ? [index] : []);
+            const matches = positions.map(index => entries[index]);
             const peers = configs.filter(c => c.kind === config.kind);
             // Update every existing occurrence; only create a new entry in one file.
             const exists = peers.some(c => (c.data.plugins ?? []).some(e => identify(e)?.id === plugin.id));
             const destination = peers.find(c => c.original !== null) ?? peers[0];
-            if (!matches.length && (exists || destination !== config)) continue;
-            // Preserve options and all other entry fields.
-            const old = matches.find(entry => typeof entry === "object") ?? matches[0];
-            entries.splice(position < 0 ? entries.length : position, 0, typeof old === "object" ? { ...old, package: specifier(plugin.id, revision) } : specifier(plugin.id, revision));
+            const install = action !== "remove" && plugin.targets.includes(config.kind)
+                && (matches.length || (!exists && destination === config));
+            if (install) {
+                // Collapse old/new-path duplicates without dropping any options.
+                const entry = updatedEntry(matches, plugin, revision, config.path);
+                if (positions.length) {
+                    update(["plugins", positions[0]], entries[positions[0]], entry);
+                    entries[positions[0]] = entry;
+                } else {
+                    edit(["plugins", entries.length], entry, true);
+                    entries.push(entry);
+                }
+            }
+            for (const index of (install ? positions.slice(1) : positions).toReversed()) {
+                next = removeArrayEntry(next, index);
+                entries.splice(index, 1);
+            }
         }
-        if (JSON.stringify(entries) === JSON.stringify(config.data.plugins ?? [])) return { ...config, next: config.original };
-        const original = config.original ?? "{}\n";
-        const next = applyEdits(original, modify(original, ["plugins"], entries, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: original.includes("\r\n") ? "\r\n" : "\n" } }));
+        if (isDeepStrictEqual(entries, config.data.plugins ?? [])) return { ...config, next: config.original };
+        const errors = [];
+        const data = parse(next, errors, { allowTrailingComma: true });
+        if (errors.length || !isDeepStrictEqual(data, { ...parse(config.original ?? "{}"), plugins: entries }))
+            throw new Error(`生成的配置校验失败：${config.path}（未修改配置）`);
         return { ...config, next };
     }).filter(c => c.next !== c.original);
 }

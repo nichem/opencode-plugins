@@ -85,12 +85,12 @@ test("status distinguishes latest, update, absent, incomplete and failed checks"
     cfg[0].data.plugins = [specifier("opencode-providers", "main"), specifier("opencode-goal", revision)];
     cfg[2].data.plugins = [specifier("opencode-message-delete", older)];
     const trees = new Map([
-        [revision, new Map([["opencode-providers", "same"], ["opencode-message-delete", "new"]])],
-        [revision.slice(0,7), new Map([["opencode-providers", "same"]])],
-        [older, new Map([["opencode-message-delete", "old"]])],
+        [revision, new Map([["plugins/opencode-providers", "same"], ["plugins/opencode-message-delete", "new"]])],
+        [revision.slice(0,7), new Map([["plugins/opencode-providers", "same"]])],
+        [older, new Map([["plugins/opencode-message-delete", "old"]])],
     ]);
     const state = statuses(cfg, revision, `opencode-providers ${revision.slice(0,7)} ${specifier("opencode-providers", "main")}`, trees);
-    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent", "absent"]);
+    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent", "absent", "absent"]);
     assert.equal(statuses(cfg, undefined)[0].state, "unknown");
     assert.equal(statuses(cfg, revision)[0].state, "repair");
 });
@@ -142,6 +142,24 @@ test("websearch installs both entrances and uninstall preserves unrelated config
         assert.deepEqual(parse(change.next).plugins, ["foreign"]);
         assert.deepEqual(parse(change.next).websearch, { provider: "tavily" });
     }
+});
+
+test("DeepSeek behavior manages both entrances while preserving JSONC, plugin options and other configuration", () => {
+    const behavior = catalog.find(plugin => plugin.id === "opencode-deepseek-behavior");
+    const changes = planChanges(configs(), [behavior], "install", revision);
+    assert.deepEqual(changes.map(config => config.path), ["opencode.json", "cli.json"]);
+    for (const change of changes) assert.deepEqual(parse(change.next).plugins, [specifier(behavior.id, revision)]);
+    const original = '{\n // fixture comment\n "plugins":["foreign",{"package":"' + specifier(behavior.id, older) + '","options":{"fixture":true}}],"keep":true\n}';
+    const config = { kind: "server", path: "opencode.jsonc", original, data: parse(original) };
+    const updated = planChanges([config], [behavior], "install", revision)[0].next;
+    assert.match(updated, /fixture comment/);
+    assert.deepEqual(parse(updated), { plugins: ["foreign", { package: specifier(behavior.id, revision), options: { fixture: true } }], keep: true });
+    assert.deepEqual(parse(planChanges([config], [behavior], "remove")[0].next), { plugins: ["foreign"], keep: true });
+    const installed = configs();
+    installed[0].data.plugins = [specifier(behavior.id, revision)];
+    assert.equal(statuses(installed, revision).find(plugin => plugin.id === behavior.id).state, "repair");
+    installed[2].data.plugins = [specifier(behavior.id, revision)];
+    assert.equal(statuses(installed, revision).find(plugin => plugin.id === behavior.id).state, "current");
 });
 
 test("disk changes make backups, preserve concurrent edits and roll back earlier files", async () => {

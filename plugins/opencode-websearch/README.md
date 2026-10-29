@@ -53,7 +53,7 @@ npx github:nichem/opencode-plugins
 也可将以下条目分别合并到 `opencode.json`（或 `opencode.jsonc`）以及 `cli.json` 的 `plugins` 数组，保留已有条目和选项：
 
 ```json
-"git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-websearch"
+"git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-websearch"
 ```
 
 两个入口需要同时配置。服务端注册 DSS、管理选择并处理会话覆盖，终端入口提供 `/search` 弹窗。执行 `opencode reload` 并重新打开终端界面。分发文件为 JavaScript，安装时无需本地构建。

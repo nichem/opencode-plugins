@@ -92,13 +92,13 @@ async function versionFixture(t) {
     await git(["config", "uploadpack.allowFilter", "true"]);
     await git(["config", "uploadpack.allowAnySHA1InWant", "true"]);
     for (const id of ["opencode-providers", "opencode-ui"]) {
-        await mkdir(join(source, id));
-        await writeFile(join(source, id, "index.js"), "export default 1;\n");
+        await mkdir(join(source, "plugins", id), { recursive: true });
+        await writeFile(join(source, "plugins", id, "index.js"), "export default 1;\n");
     }
     const old = await commit();
     await writeFile(join(source, "README.md"), "Unrelated fixture change\n");
     const unchanged = await commit();
-    await writeFile(join(source, "opencode-providers", "index.js"), "export default 2;\n");
+    await writeFile(join(source, "plugins", "opencode-providers", "index.js"), "export default 2;\n");
     const latest = await commit();
     const run = (file, args, options) => exec(file, args.map(arg => arg === repo ? pathToFileURL(source).href : arg), options);
     return { git, identity, run, old, unchanged, latest };
@@ -144,7 +144,7 @@ test("cached short IDs resolve tag-only commits, peel annotated tags and reject 
     await git([...identity, "tag", "-a", "annotated-release", tagged, "-m", "fixture annotation"]);
     await git([...identity, "tag", "moved", latest]);
     await git(["branch", "release", latest]);
-    const blob = await git(["rev-parse", `${old}:opencode-providers/index.js`]);
+    const blob = await git(["rev-parse", `${old}:plugins/opencode-providers/index.js`]);
     await git([...identity, "tag", "document-tag", blob]);
     const short = tagged.slice(0, 7);
     for (const ref of ["release", "refs/tags/annotated-release", "moved"]) {

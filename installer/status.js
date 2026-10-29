@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { catalog, identify, repo } from "./catalog.js";
+import { catalog, identify, pluginPath, repo } from "./catalog.js";
 const exec = promisify(execFile);
 export async function opencode(command) {
     const commands = { version: ["--version"], list: ["plugin", "list"], reload: ["reload"] };
@@ -29,17 +29,17 @@ function installedVersions(installed) {
     return versions;
 }
 
-function configuredRevisions(configs, id, versions) {
+function configuredInstallations(configs, id, versions) {
     return configs.flatMap(c => (c.data.plugins ?? []).flatMap(entry => {
         const item = identify(entry);
         if (item?.id !== id) return [];
         const source = typeof entry === "string" ? entry : entry.package;
-        return [/^[a-f0-9]{40}$/.test(item.revision) ? item.revision : versions.get(source)];
+        return [{ path: item.path, revision: /^[a-f0-9]{40}$/.test(item.revision) ? item.revision : versions.get(source) }];
     }));
 }
 
-// Only commit metadata and the root tree are requested; never request blobs,
-// recursive trees, commit diffs, or agent document contents.
+// Only commit metadata and nonrecursive root/plugins trees are requested.
+// Never descend into a plugin, request blobs or read agent documents.
 export async function revisionTrees(revision, request = fetch) {
     if (!/^[a-f0-9]{7,40}$/.test(revision)) throw new Error("无效的提交版本");
     const get = async path => {
@@ -54,14 +54,24 @@ export async function revisionTrees(revision, request = fetch) {
     const commit = commits?.[0];
     if (!/^[a-f0-9]{40}$/.test(commit?.sha) || !commit.sha.startsWith(revision)
         || !/^[a-f0-9]{40}$/.test(commit?.commit?.tree?.sha)) throw new Error("无法解析提交版本");
-    const root = await get(`git/trees/${commit.commit.tree.sha}`);
-    if (root.truncated || !Array.isArray(root.tree)) throw new Error("目录版本数据不完整");
-    return new Map(root.tree.filter(entry => entry.type === "tree" && catalog.some(p => p.id === entry.path)
-        && /^[a-f0-9]{40}$/.test(entry.sha)).map(entry => [entry.path, entry.sha]));
+    const readTree = async sha => {
+        const tree = await get(`git/trees/${sha}`);
+        if (tree.truncated || !Array.isArray(tree.tree)) throw new Error("目录版本数据不完整");
+        return tree.tree;
+    };
+    const entries = await readTree(commit.commit.tree.sha);
+    const known = entry => entry.type === "tree" && catalog.some(p => p.id === entry.path) && /^[a-f0-9]{40}$/.test(entry.sha);
+    const trees = new Map(entries.filter(known).map(entry => [entry.path, entry.sha]));
+    const container = entries.find(entry => entry.type === "tree" && entry.path === "plugins");
+    if (container) {
+        if (!/^[a-f0-9]{40}$/.test(container.sha)) throw new Error("插件目录版本无效");
+        for (const entry of (await readTree(container.sha)).filter(known)) trees.set(pluginPath(entry.path), entry.sha);
+    }
+    return trees;
 }
 
-// Fetch commits first, then explicitly request only their root trees. GitHub
-// supports tree:0 but rejects tree:1. No checkout, recursive tree or blob read.
+// Fetch commits first, then only the root and optional plugins container trees.
+// GitHub supports tree:0 but rejects tree:1. No plugin tree or blob is fetched.
 export async function gitRevisionTrees(revisions, { run = exec, sources = new Map() } = {}) {
     const refs = [...new Set(revisions)];
     if (refs.some(ref => !/^[a-f0-9]{7,40}$/.test(ref))) throw new Error("无效的提交版本");
@@ -126,15 +136,30 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
         }
         if (!roots.size) throw failure ?? new Error("无法解析 Git 提交版本");
         await fetchAvailable(roots.values());
-        const trees = new Map();
+        const readTree = async sha => {
+            const output = await git(["ls-tree", "-d", "-z", sha]);
+            return new Map(output.split("\0").flatMap(line => {
+                const match = /^040000 tree ([a-f0-9]{40})\t(.+)$/.exec(line);
+                return match && (match[2] === "plugins" || catalog.some(p => p.id === match[2])) ? [[match[2], match[1]]] : [];
+            }));
+        };
+        const containers = new Map();
         for (const root of new Set(roots.values())) {
-            try {
-                const output = await git(["ls-tree", "-d", "-z", root]);
-                trees.set(root, new Map(output.split("\0").flatMap(line => {
-                    const match = /^040000 tree ([a-f0-9]{40})\t(.+)$/.exec(line);
-                    return match && catalog.some(p => p.id === match[2]) ? [[match[2], match[1]]] : [];
-                })));
-            } catch { /* An unavailable root affects only its own revisions. */ }
+            try { containers.set(root, await readTree(root)); }
+            catch { /* An unavailable root affects only its own revisions. */ }
+        }
+        await fetchAvailable([...containers.values()].map(tree => tree.get("plugins")).filter(Boolean));
+        const nested = new Map();
+        for (const sha of new Set([...containers.values()].map(tree => tree.get("plugins")).filter(Boolean))) {
+            try { nested.set(sha, await readTree(sha)); }
+            catch { /* Leave unavailable paths unknown, retaining valid legacy paths. */ }
+        }
+        const trees = new Map();
+        for (const [root, container] of containers) {
+            const tree = new Map([...container].filter(([path]) => path !== "plugins"));
+            for (const [id, sha] of nested.get(container.get("plugins")) ?? [])
+                if (id !== "plugins") tree.set(pluginPath(id), sha);
+            trees.set(root, tree);
         }
         return new Map([...roots].filter(([, root]) => trees.has(root)).map(([ref, root]) => [ref, trees.get(root)]));
     } finally {
@@ -146,7 +171,7 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
 export async function loadVersionTrees(configs, latest, installed = "", readTrees = revisionTrees,
     { readGitTrees = gitRevisionTrees, report = () => {} } = {}) {
     const versions = installedVersions(installed);
-    const revisions = new Set(catalog.flatMap(p => configuredRevisions(configs, p.id, versions)).filter(Boolean));
+    const revisions = new Set(catalog.flatMap(p => configuredInstallations(configs, p.id, versions)).map(item => item.revision).filter(Boolean));
     if (![...revisions].some(ref => ref !== latest)) return new Map();
     revisions.add(latest);
     const failures = new Map();
@@ -184,15 +209,20 @@ export function statuses(configs, latest, installed = "", trees = new Map()) {
         if (!present.length) return { ...plugin, state: "absent", label: "未安装" };
         if (!plugin.targets.every(kind => present.some(c => c.kind === kind))) return { ...plugin, state: "repair", label: "配置不完整 · 可修复" };
         if (!latest) return { ...plugin, state: "unknown", label: "更新检查失败 · 请重试" };
-        const revisions = configuredRevisions(present, plugin.id, versions);
-        if (revisions.some(ref => !ref)) return { ...plugin, state: "repair", label: "版本未知 · 可重新安装" };
-        const comparison = revisions.map(ref => {
+        const installations = configuredInstallations(present, plugin.id, versions);
+        if (installations.some(item => !item.revision)) return { ...plugin, state: "repair", label: "版本未知 · 可重新安装" };
+        const canonical = pluginPath(plugin.id);
+        const migration = installations.some(item => item.path !== canonical);
+        const duplicate = present.some(config => (config.data.plugins ?? []).filter(entry => identify(entry)?.id === plugin.id).length > 1);
+        const comparison = installations.map(({ revision: ref, path }) => {
             if (ref === latest) return true;
-            const before = trees.get(ref)?.get(plugin.id), after = trees.get(latest)?.get(plugin.id);
+            const before = trees.get(ref)?.get(path), after = trees.get(latest)?.get(canonical);
             return before && after ? before === after : undefined;
         });
         if (comparison.includes(undefined)) return { ...plugin, state: "unknown", label: "版本检查失败 · 请重试" };
         const current = comparison.every(Boolean);
+        if (migration) return { ...plugin, state: current ? "repair" : "update", label: current ? "旧目录地址 · 需要迁移" : "有更新 · 需要迁移" };
+        if (duplicate) return { ...plugin, state: "repair", label: "重复配置 · 可修复" };
         return { ...plugin, state: current ? "current" : "update", label: current ? "已安装 · 最新" : "已安装 · 有更新" };
     });
 }

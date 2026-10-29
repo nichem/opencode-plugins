@@ -12,7 +12,7 @@
 {
   "plugins": [
     {
-      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers",
+      "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers",
       "options": {
         "providers": {
           "qoder": {
@@ -30,7 +30,7 @@
 
 也可以直接在 `plugins` 中填写上述 Git 地址字符串，默认启用两个供应商及模型发现。私有仓库需要本机 Git 访问权限。Qoder 的 `setDefault: true` 将默认模型设为 `qoder/auto`；默认不会覆盖你的模型选择。两个供应商均可通过 `enabled: false` 单独关闭。
 
-这是服务端插件，不注册到 `cli.json`。更新仓库后执行 `opencode plugin update 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-providers'` 更新安装包。
+这是服务端插件，不注册到 `cli.json`。更新仓库后执行 `opencode plugin update 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers'` 更新安装包。
 
 不要同时启用旧 Qoder 插件或旧的 `provider.krill` 配置和本插件的同名供应商。已有 Krill API Key 应先通过 `/connect` 存入 OpenCode，再移除旧配置。本插件自身不会改写全局配置，也不兼容 1.x 的插件接口。
 

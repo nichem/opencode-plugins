@@ -7,12 +7,14 @@ export const catalog = [
     { id: "opencode-quota", title: "当前供应商额度侧栏", targets: ["server", "tui"] },
     { id: "opencode-websearch", title: "搜索供应商选择 / DeepSeek Search", targets: ["server", "tui"] },
     { id: "opencode-ui", title: "UI 优化：思考实时计时 / 末尾收起", targets: ["tui"] },
+    { id: "opencode-deepseek-behavior", title: "DeepSeek 行为增强与持久化开关", targets: ["server", "tui"] },
 ];
-export const specifier = (id, revision) => `git+${repo}#${revision}::path:${id}`;
+export const pluginPath = id => `plugins/${id}`;
+export const specifier = (id, revision) => `git+${repo}#${revision}::path:${pluginPath(id)}`;
 export function identify(entry) {
     const value = typeof entry === "string" ? entry : entry?.package;
     if (typeof value !== "string") return;
-    const match = /^(git\+https:\/\/github\.com\/nichem\/opencode-plugins(?:\.git)?|github:nichem\/opencode-plugins|nichem\/opencode-plugins)#([^:]+)::path:([^/]+)\/?$/.exec(value);
-    if (!match || !catalog.some(p => p.id === match[3])) return;
-    return { id: match[3], revision: match[2] };
+    const match = /^(git\+https:\/\/github\.com\/nichem\/opencode-plugins(?:\.git)?|github:nichem\/opencode-plugins|nichem\/opencode-plugins)#([^:]+)::path:((?:plugins\/)?([^/]+))\/?$/.exec(value);
+    if (!match || !catalog.some(p => p.id === match[4])) return;
+    return { id: match[4], revision: match[2], path: match[3] };
 }

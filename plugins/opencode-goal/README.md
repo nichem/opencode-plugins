@@ -7,14 +7,14 @@
 先删除原来的 `opencode-goal` npm 配置条目，避免两个插件同时注册 `/goal`。
 
 ```powershell
-opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal'
+opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-goal'
 ```
 
 上面的命令安装服务端插件。在 `~/.config/opencode/cli.json` 的 `plugins` 中也添加同一地址，启用状态提示的 TUI 入口：
 
 ```json
 {
-  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-goal"]
+  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-goal"]
 }
 ```
 

@@ -20,7 +20,7 @@ npx github:nichem/opencode-plugins
 {
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-ui"
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-ui"
   ]
 }
 ```
@@ -33,7 +33,7 @@ npx github:nichem/opencode-plugins
 
 ```json
 {
-  "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-ui",
+  "package": "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-ui",
   "options": {
     "thinkingTimer": true,
     "collapseThinking": true

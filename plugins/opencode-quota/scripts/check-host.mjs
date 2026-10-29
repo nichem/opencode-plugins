@@ -27,17 +27,17 @@ try {
     // Exercise OpenCode's actual npm installer against a Git subdirectory. A
     // reserved build/prepare script must fail here, rather than after release.
     const repository = join(root, "repository")
-    await mkdir(repository)
-    await cp(installed, join(repository, manifest.name), { recursive: true })
+    await mkdir(join(repository, "plugins"), { recursive: true })
+    await cp(installed, join(repository, "plugins", manifest.name), { recursive: true })
     const gitConfig = join(root, "gitconfig")
     await writeFile(gitConfig, "")
     const gitOptions = { cwd: repository, windowsHide: true,
       env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitConfig } }
-    for (const args of [["init", "--quiet"], ["add", "--", manifest.name],
+    for (const args of [["init", "--quiet"], ["add", "--", "plugins"],
       ["-c", "user.name=Quota Fixture", "-c", "user.email=quota-fixture@example.invalid", "commit", "--quiet", "-m", "Quota fixture"]])
       await run("git", args, gitOptions)
     const { stdout: revision } = await run("git", ["rev-parse", "HEAD"], gitOptions)
-    const spec = `git+${pathToFileURL(repository).href}#${revision.trim()}::path:${manifest.name}`
+    const spec = `git+${pathToFileURL(repository).href}#${revision.trim()}::path:plugins/${manifest.name}`
     // Npm's global runtime retains handles. Run it in an isolated child and
     // exit after flushing its result, without sharing any development modules.
     const source = `

@@ -9,14 +9,14 @@ OpenCode 2.x 服务端插件。读取插件自带 `agents/` 目录中的 Markdow
 通过公开仓库安装，无需 GitHub 凭据：
 
 ```powershell
-opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents'
+opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-agents'
 ```
 
 也可在 `opencode.json` 的 `plugins` 中添加（不是 `cli.json`）：
 
 ```json
 {
-  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-agents"]
+  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-agents"]
 }
 ```
 

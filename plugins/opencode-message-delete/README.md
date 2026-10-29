@@ -8,7 +8,7 @@ OpenCode 2.x 的 TUI 插件，将旧 message-editor 的用途收窄为：**每�
 
 ```json
 {
-  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:opencode-message-delete"]
+  "plugins": ["git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-message-delete"]
 }
 ```
 
