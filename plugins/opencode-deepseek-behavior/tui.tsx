@@ -36,17 +36,20 @@ export default {
 } satisfies Plugin.Definition
 
 export function BehaviorCard(props: { ctx: Plugin.Context; state: () => PanelState; toggle: () => Promise<void> }) {
-  const label = () => props.state().busy ? props.state().saving ? "保存中…" : "读取中…"
-    : props.state().enabled === undefined ? "[重试]" : props.state().enabled ? "[开]" : "[关]"
+  const label = () => {
+    const { enabled, busy, saving } = props.state()
+    if (busy && saving) return "保存中…"
+    if (enabled !== undefined) return enabled ? "[开]" : "[关]"
+    return busy ? "读取中…" : "[重试]"
+  }
   return <box flexDirection="column" paddingTop={1} paddingBottom={1} gap={1}>
     <box id="deepseek-behavior-toggle" flexDirection="row" justifyContent="space-between" gap={1}
       onMouseUp={event => { if (event.button !== 0) return; event.stopPropagation(); void props.toggle() }}>
       <text fg={props.ctx.theme.text.base}><b>DeepSeek 行为增强</b></text>
       <text fg={props.state().enabled ? props.ctx.theme.text.feedback.success.base : props.ctx.theme.text.muted}>{label()}</text>
     </box>
-    <text fg={props.state().error ? props.ctx.theme.text.feedback.warning.base : props.ctx.theme.text.muted}>
-      {props.state().error ?? "进度沟通 · 讨论边界 · 提交授权"}
-    </text>
-    <text fg={props.ctx.theme.text.muted}>点击切换 · 跨会话保存</text>
+    <Show when={props.state().error}>{error =>
+      <text fg={props.ctx.theme.text.feedback.warning.base}>{error()}</text>
+    }</Show>
   </box>
 }

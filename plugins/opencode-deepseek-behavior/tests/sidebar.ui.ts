@@ -7,6 +7,8 @@ import plugin from "../tui.js"
 
 test("real sidebar renders and clicks the persisted switch, hides on other models, and restores after switching back", async () => {
   let saved = true, commands: any[] = []
+  let nextRead: Promise<{ enabled: boolean }> | undefined
+  let failRead = false
   const handlers = new Map<string, (event: unknown) => void>()
   const slots = new Map<string, () => unknown>()
   const [model, setModel] = createSignal({ modelID: "proxy/DEEPSEEK-v4", providerID: "fixture" })
@@ -15,7 +17,12 @@ test("real sidebar renders and clicks the persisted switch, hides on other model
   const ctx: any = {
     theme, location: { directory: "/fixture" },
     client: { rpc: () => ({
-      get: async () => ({ enabled: saved }),
+      get: async () => {
+        if (failRead) throw new Error("Fixture read failure")
+        const result = nextRead
+        nextRead = undefined
+        return result ?? { enabled: saved }
+      },
       set: async ({ enabled }: { enabled: boolean }) => { saved = enabled; return { enabled } },
       events: { on: (name: string, handler: any) => { handlers.set(name, handler); return () => handlers.delete(name) } },
     }) },
@@ -40,12 +47,32 @@ test("real sidebar renders and clicks the persisted switch, hides on other model
     await screen.renderOnce()
     assert.equal(saved, false)
     assert.match(screen.captureCharFrame(), /\[关\]/)
+    const offFrame = screen.captureCharFrame()
+    let finishRead!: (value: { enabled: boolean }) => void
+    nextRead = new Promise(resolve => { finishRead = resolve })
+    handlers.get("changed")!({ data: { enabled: true } })
+    await screen.renderOnce()
+    assert.equal(screen.captureCharFrame(), offFrame, "background reads must keep the confirmed switch visible")
+    finishRead({ enabled: false })
+    await screen.renderOnce()
+    assert.equal(screen.captureCharFrame(), offFrame)
+    assert.doesNotMatch(offFrame, /进度沟通|讨论边界|提交授权|点击切换|跨会话保存/)
     setModel({ modelID: "gpt-fixture", providerID: "deepseek" })
     await screen.renderOnce()
     assert.doesNotMatch(screen.captureCharFrame(), /DeepSeek 行为增强/)
     setModel({ modelID: "deepseek-r1", providerID: "another-proxy" })
     await screen.renderOnce()
     assert.match(screen.captureCharFrame(), /\[关\]/)
+    failRead = true
+    handlers.get("changed")!({ data: { enabled: false } })
+    await screen.renderOnce()
+    assert.match(screen.captureCharFrame(), /\[重试\]/)
+    assert.match(screen.captureCharFrame(), /读取失败/)
+    failRead = false
+    await commands[0].run()
+    await screen.renderOnce()
+    assert.match(screen.captureCharFrame(), /\[关\]/)
+    assert.doesNotMatch(screen.captureCharFrame(), /读取失败/)
     await commands[0].run()
     await screen.renderOnce()
     assert.equal(saved, true)
