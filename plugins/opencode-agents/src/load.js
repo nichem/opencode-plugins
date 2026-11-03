@@ -28,7 +28,7 @@ export function parseAgent(source, filename) {
     }
     if (!body.trim()) throw new Error(`${filename}: agent prompt is empty`);
     const name = metadata.name ?? basename(filename).replace(/\.md$/i, "");
-    if (typeof name !== "string" || !/^[\p{L}\p{N}_-]+$/u.test(name)) throw new Error(`${filename}: invalid agent name`);
+    if (typeof name !== "string" || !/^[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)*$/u.test(name)) throw new Error(`${filename}: invalid agent name`);
     // Namespace avoids replacing built-ins or similarly named local agents.
     const id = `bundled-${name}`;
     const agent = { ...Agent.Info.default(Agent.ID.make(id)), name: id, system: body.trim() };

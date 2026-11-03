@@ -14,6 +14,24 @@ test("plain Markdown and v2 frontmatter become agent definitions", () => {
     assert.equal(agent.permissions.at(-1).effect, "deny");
 });
 
+test("dotted filenames and explicit names preserve localized agent identities", () => {
+    for (const name of ["ratman4080.zh", "review.zh-CN", "review.v2.zh_CN", "审查.中文"]) {
+        for (const agent of [
+            parseAgent("Synthetic localized prompt", `${name}.md`),
+            parseAgent(`---\nname: ${name}\n---\nSynthetic localized prompt`, "fixture.md"),
+        ]) {
+            assert.equal(agent.id, `bundled-${name}`);
+            assert.equal(agent.name, `bundled-${name}`);
+        }
+    }
+});
+
+test("agent names still reject empty segments, paths and whitespace", () => {
+    for (const name of ["", ".review", "review.", "review..zh", "../review", "review/zh", "review\\zh", "review zh"]) {
+        assert.throws(() => parseAgent(`---\nname: '${name}'\n---\nSynthetic prompt`, "fixture.md"), /invalid agent name/);
+    }
+});
+
 test("errors do not disclose document contents", () => {
     for (const source of ["---\nname: [secret-marker\n---\nTest", "---\nmode: secret-marker\n---\nTest", "---\npermission: secret-marker\n---\nTest", ""]) {
         assert.throws(() => parseAgent(source, "test.md"), error => !error.message.includes("secret-marker"));
@@ -24,12 +42,16 @@ test("only fixture Markdown is loaded and duplicate names fail", async () => {
     const dir = await mkdtemp(join(tmpdir(), "opencode-agent-fixture-"));
     try {
         await writeFile(join(dir, "one.md"), "Fixture prompt");
+        await writeFile(join(dir, "one.zh.md"), "Synthetic localized prompt");
+        await writeFile(join(dir, "one-zh.md"), "Synthetic separate prompt");
         await writeFile(join(dir, "ignored.txt"), "ignored");
         await mkdir(join(dir, "nested"));
         await writeFile(join(dir, "nested", "ignored.md"), "ignored");
         const agents = await loadAgents(dir);
-        assert.equal(agents.length, 1);
+        assert.deepEqual(agents.map(agent => agent.id).sort(), ["bundled-one", "bundled-one-zh", "bundled-one.zh"].sort());
         await writeFile(join(dir, "two.md"), "---\nname: one\n---\nOther fixture");
+        await assert.rejects(loadAgents(dir), /duplicate/);
+        await writeFile(join(dir, "two.md"), "---\nname: ONE.ZH\n---\nOther fixture");
         await assert.rejects(loadAgents(dir), /duplicate/);
         assert.deepEqual(await loadAgents(join(dir, "missing")), []);
     } finally { await rm(dir, { recursive: true, force: true }); }

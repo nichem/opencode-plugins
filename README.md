@@ -121,7 +121,7 @@ Krill 的模型列表只提供 ID，长度与能力参数使用插件默认值�
 opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-agents'
 ```
 
-插件从随包分发的 `agents/` Markdown 文档注册 agent，无需复制到本机 agent 目录。注册名称统一带 `bundled-` 前缀，可在 agent 选择器中选择；具体可见性取决于文档中的 `mode` 和 `hidden` 设置。
+插件从随包分发的 `agents/` Markdown 文档注册 agent，无需复制到本机 agent 目录。注册名称统一带 `bundled-` 前缀，支持 `review.zh.md` 这类点分隔文件名，可在 agent 选择器中选择；具体可见性取决于文档中的 `mode` 和 `hidden` 设置。
 
 只需配置服务端入口，不需要添加到 `cli.json`。文档格式和更新方法见 [Agent 插件说明](./plugins/opencode-agents/README.md)。
 

@@ -26,7 +26,7 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 
 ## 文档格式
 
-纯 Markdown 即可，文件名作为名称，正文作为提示词。也支持 YAML frontmatter：
+纯 Markdown 即可，文件名去掉末尾 `.md` 后作为名称，正文作为提示词。名称支持字母、数字、下划线、连字符，以及点分隔的非空片段；例如 `review.zh.md` 注册为 `bundled-review.zh`，与 `review.md`、`review-zh.md` 分别独立。也支持 YAML frontmatter，其中 `name` 优先于文件名并遵循相同命名规则：
 
 ```markdown
 ---
