@@ -1,5 +1,5 @@
 import { getMachineId } from "./cosy.js";
-import { QODER_EXCHANGE_URL, QODER_USERINFO_URL, USER_AGENT } from "./constants.js";
+import { QODER_CN, USER_AGENT } from "./constants.js";
 // Internal credential channel; JSON plugin/provider settings cannot supply it.
 export const CONNECTION_PAT = Symbol("Qoder connection PAT");
 export const PAT_REFRESH_PREFIX = "pat";
@@ -33,9 +33,9 @@ function parseExpiresAt(expiresAt, expiresIn) {
     }
     return Date.now() + 24 * 60 * 60 * 1000;
 }
-async function fetchUserInfo(jobToken, signal) {
+async function fetchUserInfo(jobToken, signal, region) {
     try {
-        const res = await fetch(QODER_USERINFO_URL, {
+        const res = await fetch(region.userInfoURL, {
             signal,
             headers: {
                 Authorization: `Bearer ${jobToken}`,
@@ -60,20 +60,21 @@ async function fetchUserInfo(jobToken, signal) {
         return { userID: "", email: "", name: "" };
     }
 }
-export async function credentialsFromPat(pat, signal) {
+export async function credentialsFromPat(pat, signal, region = QODER_CN) {
     signal?.throwIfAborted();
-    const cached = credentialsCache.get(pat);
+    const cacheKey = `${region.region}\0${pat}`;
+    const cached = credentialsCache.get(cacheKey);
     if (cached?.expires > Date.now())
         return cached;
-    credentialsCache.delete(pat);
-    let entry = pendingCredentials.get(pat);
+    credentialsCache.delete(cacheKey);
+    let entry = pendingCredentials.get(cacheKey);
     if (!entry) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(new DOMException("Qoder authentication timed out", "TimeoutError")), AUTH_TIMEOUT_MS);
         entry = { controller, waiters: 0, promise: undefined };
         const signal = controller.signal;
         const pending = (async () => {
-            const res = await fetch(QODER_EXCHANGE_URL, {
+            const res = await fetch(region.exchangeURL, {
                 signal,
                 method: "POST",
                 headers: {
@@ -82,7 +83,7 @@ export async function credentialsFromPat(pat, signal) {
                     "User-Agent": USER_AGENT,
                     "Cosy-Version": "1.0.1",
                     "Cosy-ClientType": "5",
-                    "Cosy-MachineId": getMachineId(),
+                    "Cosy-MachineId": getMachineId(region.region),
                 },
                 body: JSON.stringify({ personal_token: pat }),
             });
@@ -93,9 +94,9 @@ export async function credentialsFromPat(pat, signal) {
             const data = (await res.json());
             if (!data.token)
                 throw new Error("Qoder PAT exchange returned no job token");
-            const profile = await fetchUserInfo(data.token, signal);
+            const profile = await fetchUserInfo(data.token, signal, region);
             signal.throwIfAborted();
-            const machineID = getMachineId();
+            const machineID = getMachineId(region.region);
             return {
                 refresh: encodePatRefresh(pat, data.refresh_token || "", profile.userID, machineID),
                 access: data.token,
@@ -108,14 +109,14 @@ export async function credentialsFromPat(pat, signal) {
         })();
         entry.promise = pending.then((resolved) => {
             if (!signal.aborted)
-                credentialsCache.set(pat, resolved);
+                credentialsCache.set(cacheKey, resolved);
             return resolved;
         }).finally(() => {
             clearTimeout(timer);
-            if (pendingCredentials.get(pat) === entry)
-                pendingCredentials.delete(pat);
+            if (pendingCredentials.get(cacheKey) === entry)
+                pendingCredentials.delete(cacheKey);
         });
-        pendingCredentials.set(pat, entry);
+        pendingCredentials.set(cacheKey, entry);
     }
     entry.waiters++;
     let abort;
@@ -133,19 +134,19 @@ export async function credentialsFromPat(pat, signal) {
     } finally {
         if (abort) signal.removeEventListener("abort", abort);
         entry.waiters--;
-        if (entry.waiters === 0 && pendingCredentials.get(pat) === entry) {
-            pendingCredentials.delete(pat);
+        if (entry.waiters === 0 && pendingCredentials.get(cacheKey) === entry) {
+            pendingCredentials.delete(cacheKey);
             entry.controller.abort(signal?.reason);
         }
     }
 }
-export async function resolveQoderCredentials(options = {}, signal) {
+export async function resolveQoderCredentials(options = {}, signal, region = QODER_CN) {
     const token = (options[CONNECTION_PAT] ?? "").trim();
     if (!token) {
-        throw new Error("Qoder PAT not set. Use /connect to select Qoder CN and enter a pt-... PAT.");
+        throw new Error(`Qoder PAT not set. Use /connect to select ${region.name} and enter a pt-... PAT.`);
     }
     if (!token.startsWith("pt-") || token.length <= 3) {
-        throw new Error("Qoder CN only supports Personal Access Tokens starting with pt-. Direct access tokens and browser OAuth login are not supported.");
+        throw new Error(`${region.name} only supports Personal Access Tokens starting with pt-. Direct access tokens and browser OAuth login are not supported.`);
     }
-    return credentialsFromPat(token, signal);
+    return credentialsFromPat(token, signal, region);
 }

@@ -1,6 +1,6 @@
 # opencode-providers
 
-个人维护的 OpenCode **2.x** 多供应商插件，目前支持 **Qoder 中国区**和 **Krill Codex**。
+个人维护的 OpenCode **2.x** 多供应商插件，目前支持 **Qoder 中国区**、**Qoder 国际版**和 **Krill Codex**。
 
 针对 `@opencode/plugin 2.0.27` 接口适配。使用 Node.js 24+；JavaScript 源码直接加载，无需编译。
 
@@ -20,7 +20,8 @@
             "discoverModels": true,
             "setDefault": false
           },
-          "krill": { "enabled": true, "discoverModels": true }
+          "krill": { "enabled": true, "discoverModels": true },
+          "qoder-global": { "enabled": true, "discoverModels": true, "setDefault": false }
         }
       }
     }
@@ -28,7 +29,7 @@
 }
 ```
 
-也可以直接在 `plugins` 中填写上述 Git 地址字符串，默认启用两个供应商及模型发现。私有仓库需要本机 Git 访问权限。Qoder 的 `setDefault: true` 将默认模型设为 `qoder/auto`；默认不会覆盖你的模型选择。两个供应商均可通过 `enabled: false` 单独关闭。
+也可以直接在 `plugins` 中填写上述 Git 地址字符串，默认启用三个供应商及模型发现。私有仓库需要本机 Git 访问权限。中国区和国际版的 `setDefault: true` 分别将默认模型设为 `qoder/auto` 和 `qoder-global/auto`；默认不会覆盖你的模型选择。各供应商均可通过 `enabled: false` 单独关闭。
 
 这是服务端插件，不注册到 `cli.json`。更新仓库后执行 `opencode plugin update 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers'` 更新安装包。
 
@@ -43,6 +44,24 @@ PAT 自动换取临时凭据，并按过期时间缓存。每次请求重新读�
 内置 `auto` 和 `qmodel_38max`。启动时尝试读取账号可用模型，认证和模型列表请求共用 6 秒期限；失败时保留内置模型。首次连接或切换账号后，重启插件以刷新模型列表；`discoverModels: false` 可关闭发现。
 
 Qwen3.8-Max 提供 `low`、`medium`、`xhigh`、`none` 思考强度，在线模型以服务端列表为准。目录里标记的零成本表示插件没有定价数据，不代表供应商免费。
+
+## Qoder Global 认证和模型
+
+在 `/connect` 中选择 **Qoder Global**，输入从 [Qoder 国际版账号页面](https://qoder.com/account/integrations) 创建的 `pt-` PAT。凭据只从 OpenCode 当前连接读取，不从插件选项、环境变量或凭据文件回退读取。
+
+国际版的 provider/integration ID 为 `qoder-global`，原中国区仍为 `qoder`，可以同时连接。两边使用独立的连接、认证缓存及模型列表；国际版通过 `openapi.qoder.sh` 认证，通过 `api3.qoder.sh` 发现模型并发送请求，不使用中国区的凭据或地址。切换账号会在下一次请求读取新凭据。
+
+内置 `qoder-global/auto`，启动时尝试发现账号可用模型及思考档位。认证和模型列表请求共用 6 秒期限，未连接或发现失败时保留 Auto。首次连接或切换账号后，执行 `opencode reload` 刷新列表，再用 `/models` 选择模型。`discoverModels: false` 可关闭发现，`providerID` 可自定义。
+
+Auto 沿用上游适配器的 180000 上下文、32768 输出默认值；发现的模型优先采用服务端返回的上下文和能力参数，未提供时使用 200000 上下文、32768 输出默认值。这些默认值不代表服务端公布的规格，零成本标记也不代表免费。
+
+**Qoduck 是否出现取决于国际版接口对当前账号返回的模型列表。** 插件没有硬编码未经验证的 Qoduck 模型 ID，也不保证该模型可通过此 CLI 通道调用。截至 2026-11-07，[官方活动说明](https://docs.qoder.com/zh/events/qoduck-free)面向 Qoder 国际版个人用户，并注明 Qoder CLI 等产品暂不支持该活动。
+
+## Qoder 模型倍率
+
+中国区和国际版都会在发现模型时，一并读取模型列表中的 `price_factor`（当前倍率）和 `original_price_factor`（原倍率），无需额外请求。`/models` 中的模型名称会显示为 `模型名 · 0.5×`；原倍率与当前倍率不同时显示为 `模型名 · 0×（原 0.5×）`。仅装饰显示名称，模型 ID 和请求参数不变。
+
+倍率为本次模型列表返回的 Credits 消耗参考值，不是美元单价，不填入 OpenCode 的 token 价格字段。`0×` 如实展示，但不表示无限免费；实际消耗与活动额度以 Qoder 为准。接口未提供有效当前倍率、未连接或发现失败时不显示倍率，也不会把原倍率当成当前倍率。执行 `opencode reload` 可重新获取；不会在界面中按促销时段自行推算或定时刷新倍率。
 
 ## Krill 认证和模型
 
@@ -83,11 +102,14 @@ src/providers/qoder/language-model.js  请求和流式响应
 src/providers/qoder/transform.js 消息、图片和工具调用转换
 src/providers/qoder/cosy.js      请求签名
 src/providers/qoder/encoding.js  请求编码
+src/providers/qoder-global/index.js  国际版独立入口，复用 Qoder 协议实现
+src/providers/qoder-global/constants.js  国际版接口和保底模型
+src/providers/qoder-global/language-model.js  国际版 AI SDK 工厂
 src/providers/krill/index.js     /connect 注册、Responses SDK 和实时凭据
 src/providers/krill/models.js    内置模型、模型发现和参数覆盖
 ```
 
-新增供应商时增加 `src/providers/<name>/`，导出 setup 函数并注册到入口的 `providers` 映射。各供应商使用独立的 provider/integration ID 和认证实现。
+新增供应商时增加 `src/providers/<name>/`，导出 setup 函数并注册到入口的 `providers` 映射。各供应商使用独立的 provider/integration ID；Qoder 两个地区共享协议实现，但地区参数由各自入口固定。
 
 保留了原 Qoder 实现的思考解析、图片输入、工具调用、取消、认证超时和残缺流检测。2.x 通过 `provider.transform` 注册模型，使用 `aisdk:` 本地模块与 `aisdk.hook("language")` 接入 AI SDK v3 桥接；不使用旧 `catalog` 或 `aisdk.language` 接口。
 
@@ -101,11 +123,11 @@ npm test
 node scripts/smoke-krill.mjs "C:/path/to/opencode2.exe"
 ```
 
-测试使用模拟网络和虚构 PAT，覆盖 2.x 模型 schema、供应商隔离、账号切换、模型发现、工具约束、流式结束、取消和超时。测试不会使用真实 PAT 请求 Qoder；真实账号端到端验证仍需在 2.x 中进行。
+测试使用模拟网络和虚构 PAT，覆盖 2.x 模型 schema、供应商隔离、账号切换、模型发现、工具约束、流式结束、取消和超时。国际版测试还覆盖同一 PAT 在两区的并发认证与缓存隔离、独立设备标识和凭据回退禁止。测试不会使用真实 PAT 请求 Qoder；真实账号端到端验证仍需在 2.x 中进行。
 
 Krill 冒烟测试使用独立数据库和本地模拟 Responses 服务，验证真实 2.x 插件加载、连接密钥、生成及切换账号，不读取本机 API Key。
 
-已在 Windows 上用临时安装的 `@opencode/cli 2.0.27` 验证：插件加载成功、两个内置模型可见，真实服务端的一次生成请求到达 Qoder 认证代码并报告缺少 PAT。该验证使用隔离的配置、数据库和凭据目录，没有调用真实 Qoder 接口。可重复执行：
+已在 Windows 的 `@opencode/cli 2.2.6` 上验证：中国区和国际版同时加载，中国区两个内置模型及国际版 Auto 均可见，两边的生成请求分别到达认证代码并提示连接对应供应商。该验证使用隔离的配置、数据库和凭据目录，没有调用真实 Qoder 接口，也未验证真实国际版账号或 Qoduck 的可用性。可重复执行：
 
 ```powershell
 node scripts/smoke.mjs "C:/path/to/opencode2.exe"

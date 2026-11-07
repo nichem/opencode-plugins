@@ -16,9 +16,9 @@ const config = join(root, "config", "opencode");
 mkdirSync(project, { recursive: true });
 mkdirSync(join(root, "home"), { recursive: true });
 mkdirSync(config, { recursive: true });
-writeFileSync(join(config, "opencode.json"), JSON.stringify({
-    plugins: [{ package: fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/"), options: { providers: { qoder: { discoverModels: false } } } }],
-}));
+const settings = { plugins: [{ package: fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/"),
+    options: { providers: { qoder: { discoverModels: false }, "qoder-global": { discoverModels: false }, krill: { enabled: false } } } }] };
+for (const dir of [config, project]) writeFileSync(join(dir, "opencode.json"), JSON.stringify(settings));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key) && !/^OPENCODE|^QODER/i.test(key)));
 Object.assign(env, {
@@ -35,7 +35,7 @@ const result = spawnSync(executable, ["models", "--standalone", "--print-logs", 
 });
 if (result.error) throw result.error;
 if (!result.stdout.includes("qoder/auto")) {
-    for (const args of [["api", "--standalone", "config.get"], ["api", "--standalone", "plugin.list"]]) {
+    for (const args of [["api", "--standalone", "plugin.list"]]) {
         const diagnostic = spawnSync(executable, args, { cwd: project, env, windowsHide: true, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
         console.error(diagnostic.stdout, diagnostic.stderr);
     }
@@ -43,12 +43,15 @@ if (!result.stdout.includes("qoder/auto")) {
 assert.equal(result.status, 0, result.stderr || result.stdout);
 assert.match(result.stdout, /qoder\/auto/, result.stderr);
 assert.match(result.stdout, /qoder\/qmodel_38max/);
-const request = spawnSync(executable, [
-    "api", "--standalone", "POST", "/api/experimental/generate", "--data",
-    JSON.stringify({ prompt: "hello", model: { providerID: "qoder", id: "auto" } }),
-], { cwd: project, env, windowsHide: true, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
-if (request.error) throw request.error;
-assert.match(request.stdout + request.stderr, /Qoder PAT not set/, request.stdout + request.stderr);
-console.log("OpenCode 2.x loaded opencode-providers and listed both Qoder CN models.");
-console.log("The real model request reached the Qoder authentication check without sending a Qoder API request.");
+assert.match(result.stdout, /qoder-global\/auto/);
+for (const [providerID, name] of [["qoder", "Qoder CN"], ["qoder-global", "Qoder Global"]]) {
+    const request = spawnSync(executable, [
+        "api", "--standalone", "POST", "/api/experimental/generate", "--data",
+        JSON.stringify({ prompt: "hello", model: { providerID, id: "auto" } }),
+    ], { cwd: project, env, windowsHide: true, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
+    if (request.error) throw request.error;
+    assert.match(request.stdout + request.stderr, new RegExp(`Qoder PAT not set.*select ${name}`), request.stdout + request.stderr);
+}
+console.log("OpenCode 2.x loaded Qoder CN and Global with separate model inventories.");
+console.log("Both providers reached their own missing-PAT check without sending Qoder API requests.");
 console.log(`Isolated verification data: ${root}`);

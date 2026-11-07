@@ -1,21 +1,27 @@
 import { CONNECTION_PAT, resolveQoderCredentials } from "./auth.js";
 import { buildAuthHeaders } from "./cosy.js";
-import { QODER_MODELS, QODER_MODEL_LIST_URL, USER_AGENT } from "./constants.js";
+import { QODER_CN, USER_AGENT } from "./constants.js";
+
+function priceFactor(value) {
+    if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return undefined;
+    const factor = Number(value);
+    return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
+}
 
 // Discovery failure never hides the bundled models or blocks startup indefinitely.
-export async function discoverModels(options = {}) {
-    const models = new Map(QODER_MODELS.map(model => [model.id, structuredClone(model)]));
+export async function discoverModels(options = {}, region = QODER_CN) {
+    const models = new Map(region.models.map(model => [model.id, structuredClone(model)]));
     if (options.discoverModels === false || !options[CONNECTION_PAT])
         return [...models.values()];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     try {
-        const credentials = await resolveQoderCredentials(options, controller.signal);
-        const headers = buildAuthHeaders("", QODER_MODEL_LIST_URL, {
+        const credentials = await resolveQoderCredentials(options, controller.signal, region);
+        const headers = buildAuthHeaders("", region.modelListURL, {
             userID: credentials.userID, authToken: credentials.access,
             name: credentials.name, email: credentials.email, machineID: credentials.machineID,
         });
-        const response = await fetch(QODER_MODEL_LIST_URL, {
+        const response = await fetch(region.modelListURL, {
             headers: { ...headers, Accept: "application/json", "User-Agent": USER_AGENT },
             signal: controller.signal,
         });
@@ -32,6 +38,8 @@ export async function discoverModels(options = {}) {
             models.set(entry.key, {
                 id: entry.key,
                 name: entry.display_name || entry.displayName || entry.key,
+                priceFactor: priceFactor(entry.price_factor),
+                originalPriceFactor: priceFactor(entry.original_price_factor),
                 reasoning: typeof entry.is_reasoning === "boolean" ? entry.is_reasoning : bundled?.reasoning ?? false,
                 supportsEffort: efforts.length > 0,
                 efforts: thinking ? efforts : bundled?.efforts ?? [],

@@ -34,8 +34,11 @@ function computeSigPath(urlStr) {
         sigPath = sigPath.substring("/algo".length);
     return sigPath;
 }
-export function getMachineId() {
-    const paths = [
+export function getMachineId(region = "cn") {
+    const paths = region === "global" ? [
+        join(homedir(), ".qoder", ".auth", "machine_id"),
+        join(homedir(), ".local", "share", "opencode", "qoder-global-machine-id"),
+    ] : [
         join(homedir(), ".qoder-cn", ".auth", "machine_id"),
         join(homedir(), ".qoder", ".auth", "machine_id"),
         join(homedir(), ".local", "share", "opencode", "qoder-machine-id"),
@@ -52,7 +55,7 @@ export function getMachineId() {
     }
     const newId = crypto.randomUUID();
     try {
-        const savePath = join(homedir(), ".local", "share", "opencode", "qoder-machine-id");
+        const savePath = paths.at(-1);
         mkdirSync(dirname(savePath), { recursive: true });
         writeFileSync(savePath, newId, "utf8");
     }

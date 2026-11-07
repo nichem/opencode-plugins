@@ -1,9 +1,10 @@
 import { Plugin } from "@opencode/plugin";
 import { setupQoder } from "./providers/qoder/index.js";
 import { setupKrill } from "./providers/krill/index.js";
+import { setupQoderGlobal } from "./providers/qoder-global/index.js";
 
 // Each provider owns its authentication, model discovery and transport.
-const providers = new Map([["qoder", setupQoder], ["krill", setupKrill]]);
+const providers = new Map([["qoder", setupQoder], ["krill", setupKrill], ["qoder-global", setupQoderGlobal]]);
 
 export default Plugin.define({
     id: "opencode-providers",

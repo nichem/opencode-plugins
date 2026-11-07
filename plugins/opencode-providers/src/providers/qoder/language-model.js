@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveQoderCredentials } from "./auth.js";
 import { buildAuthHeaders } from "./cosy.js";
-import { getModelDefinition, QODER_CHAT_URL, USER_AGENT } from "./constants.js";
+import { getModelDefinition, QODER_CN, USER_AGENT } from "./constants.js";
 import { qoderEncodeBody } from "./encoding.js";
 import { transformPrompt, transformTools } from "./transform.js";
 const THINKING_TAG_VARIANTS = [
@@ -257,11 +257,11 @@ function effortFromSource(source) {
     }
     return effortFromBudget(source.thinkingBudget ?? source.thinking_budget ?? source.reasoningBudget ?? source.reasoning_budget);
 }
-function resolveReasoningEffort(requestOptions, providerOptions) {
+function resolveReasoningEffort(requestOptions, providerOptions, providerID) {
     const requestProviderOptions = requestOptions?.providerOptions;
     if (!requestProviderOptions || typeof requestProviderOptions !== "object")
         return effortFromSource(providerOptions);
-    const preferred = effortFromSource(requestProviderOptions.qoder);
+    const preferred = effortFromSource(requestProviderOptions[providerID]);
     if (preferred)
         return preferred;
     for (const value of Object.values(requestProviderOptions)) {
@@ -271,8 +271,8 @@ function resolveReasoningEffort(requestOptions, providerOptions) {
     }
     return effortFromSource(providerOptions);
 }
-function buildRequestBody(modelID, options, userID, providerOptions) {
-    const model = providerOptions?.modelDefinition ?? getModelDefinition(modelID);
+function buildRequestBody(modelID, options, userID, providerOptions, region, providerID) {
+    const model = providerOptions?.modelDefinition ?? getModelDefinition(modelID, region.models);
     const transformed = transformPrompt(options.prompt);
     let { tools, ignoredTools } = transformTools(options.tools);
     let toolChoice;
@@ -317,7 +317,7 @@ function buildRequestBody(modelID, options, userID, providerOptions) {
         parameters.temperature = options.temperature;
     if (typeof options.topP === "number")
         parameters.top_p = options.topP;
-    const reasoningEffort = resolveReasoningEffort(options, providerOptions);
+    const reasoningEffort = resolveReasoningEffort(options, providerOptions, providerID);
     if (reasoningEffort) {
         parameters.reasoning_effort = reasoningEffort;
         parameters.enable_thinking = reasoningEffort !== "none";
@@ -404,9 +404,11 @@ export class QoderLanguageModel {
     specificationVersion = "v3";
     provider = "qoder";
     supportedUrls = { "image/*": [/^data:/, /^https?:/] };
-    constructor(modelId, providerOptions = {}) {
+    constructor(modelId, providerOptions = {}, region = QODER_CN, providerID = region.id) {
         this.modelId = modelId;
         this.providerOptions = providerOptions;
+        this.region = region;
+        this.provider = providerID;
     }
     async doGenerate(options) {
         const result = await this.doStream(options);
@@ -446,9 +448,9 @@ export class QoderLanguageModel {
         return { content, finishReason, usage, warnings, request: result.request, response: result.response };
     }
     async doStream(options) {
-        const credentials = await resolveQoderCredentials(this.providerOptions, options.abortSignal);
-        const { body, warnings } = buildRequestBody(this.modelId, options, credentials.userID, this.providerOptions);
-        if (process.env.QODERCN_DEBUG_BODY) {
+        const credentials = await resolveQoderCredentials(this.providerOptions, options.abortSignal, this.region);
+        const { body, warnings } = buildRequestBody(this.modelId, options, credentials.userID, this.providerOptions, this.region, this.provider);
+        if (this.region.region === "cn" && process.env.QODERCN_DEBUG_BODY) {
             try {
                 writeFileSync(join(tmpdir(), "opencode-qoder-cn-last-request.json"), JSON.stringify({
                     model: this.modelId,
@@ -467,7 +469,7 @@ export class QoderLanguageModel {
         const bodyBytes = Buffer.from(JSON.stringify(body));
         const encodedBody = qoderEncodeBody(bodyBytes);
         const encodedBytes = Buffer.from(encodedBody, "utf8");
-        const headers = buildAuthHeaders(encodedBytes, QODER_CHAT_URL, {
+        const headers = buildAuthHeaders(encodedBytes, this.region.chatURL, {
             userID: credentials.userID,
             authToken: credentials.access,
             name: credentials.name,
@@ -484,7 +486,7 @@ export class QoderLanguageModel {
         try {
             // Use OpenCode's supplied fetch so request hooks and transport timeouts apply.
             const send = this.providerOptions.fetch ?? fetch;
-            const response = await send(QODER_CHAT_URL, {
+            const response = await send(this.region.chatURL, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -514,6 +516,7 @@ export class QoderLanguageModel {
     }
     responseToStream(response, warnings, abortUpstream = () => {}, cleanup = () => {}, toolChoice) {
         const modelID = this.modelId;
+        const providerID = this.provider;
         let reader;
         let cancelled = false;
         return new ReadableStream({
@@ -639,7 +642,7 @@ export class QoderLanguageModel {
                         type: "finish",
                         finishReason: mapFinishReason(rawFinishReason, sawToolCall),
                         usage: usageFromQoder(rawUsage),
-                        providerMetadata: { qoder: {} },
+                        providerMetadata: { [providerID]: {} },
                     });
                     controller.close();
                 }
@@ -651,7 +654,7 @@ export class QoderLanguageModel {
                         type: "finish",
                         finishReason: { unified: "error", raw: undefined },
                         usage: usageFromQoder(rawUsage),
-                        providerMetadata: { qoder: {} },
+                        providerMetadata: { [providerID]: {} },
                     });
                     controller.close();
                 }

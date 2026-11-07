@@ -2,7 +2,7 @@
   "name": "opencode-providers",
   "version": "0.1.0",
   "private": true,
-  "description": "Qoder CN and Krill Codex provider integrations for OpenCode 2.x.",
+  "description": "Qoder CN, Qoder Global and Krill Codex provider integrations for OpenCode 2.x.",
   "type": "module",
   "license": "MIT",
   "main": "./index.js",

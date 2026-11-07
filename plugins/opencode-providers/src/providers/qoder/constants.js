@@ -32,6 +32,17 @@ export const QODER_MODELS = [
         maxTokens: 32768,
     },
 ];
-export function getModelDefinition(modelID) {
-    return QODER_MODELS.find((model) => model.id === modelID) ?? QODER_MODELS[0];
+export const QODER_CN = Object.freeze({
+    id: PROVIDER_ID,
+    name: PROVIDER_NAME,
+    region: "cn",
+    exchangeURL: QODER_EXCHANGE_URL,
+    userInfoURL: QODER_USERINFO_URL,
+    modelListURL: QODER_MODEL_LIST_URL,
+    chatURL: QODER_CHAT_URL,
+    models: QODER_MODELS,
+    sdkPackage: `aisdk:${new URL("./language-model.js", import.meta.url).href}`,
+});
+export function getModelDefinition(modelID, models = QODER_MODELS) {
+    return models.find((model) => model.id === modelID) ?? models[0];
 }

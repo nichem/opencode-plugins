@@ -13,7 +13,8 @@ function host(options = {}, key) {
     const state = { key, resolves: 0 };
     const ctx = {
         options: { ...options, providers: typeof options.providers === "object" && !Array.isArray(options.providers)
-            ? { krill: { enabled: false }, ...options.providers } : options.providers ?? { krill: { enabled: false } } },
+            ? { krill: { enabled: false }, "qoder-global": { enabled: false }, ...options.providers }
+            : options.providers ?? { krill: { enabled: false }, "qoder-global": { enabled: false } } },
         integration: {
             async transform(fn) {
                 fn({
@@ -182,7 +183,8 @@ test("live model discovery is isolated and preserves advertised model limits", a
             return Response.json({ token: "mock-job", expires_at: new Date(Date.now() + 3600000).toISOString() });
         if (String(url).endsWith("/userinfo")) return Response.json({ id: "mock-user" });
         if (String(url).endsWith("/model/list")) return Response.json({ chat: [
-            { key: "custom-model", display_name: "Custom", max_input_tokens: 123456, is_reasoning: true, is_vl: true,
+            { key: "custom-model", display_name: "Custom", price_factor: 0.5, original_price_factor: 1,
+                max_input_tokens: 123456, is_reasoning: true, is_vl: true,
                 thinking_config: { enabled: { efforts: { high: {} } }, disabled: true } },
             { invalid: true },
         ] });
@@ -191,6 +193,8 @@ test("live model discovery is isolated and preserves advertised model limits", a
     const h = host({}, "pt-v2-discovery");
     await plugin.setup(h.ctx);
     const live = h.records[0].models.find(model => model.id === "custom-model");
+    assert.equal(live.name, "Custom · 0.5×（原 1×）");
+    assert.equal(live.modelID, "custom-model");
     assert.equal(live.limit.context, 123456);
     assert.deepEqual(live.variants.map(variant => variant.id), ["high", "none"]);
     assert.equal((await discoverModels({ discoverModels: false })).some(model => model.id === "custom-model"), false);

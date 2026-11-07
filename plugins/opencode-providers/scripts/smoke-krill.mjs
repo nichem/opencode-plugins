@@ -34,7 +34,7 @@ const mock = createServer(async (req, res) => {
 await new Promise(resolve => mock.listen(0, "127.0.0.1", resolve));
 const mockURL = `http://127.0.0.1:${mock.address().port}/codex/v1`;
 const plugin = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/");
-const settings = { plugins: [{ package: plugin, options: { providers: { qoder: { enabled: false }, krill: { baseURL: mockURL, discoverModels: false } } } }] };
+const settings = { plugins: [{ package: plugin, options: { providers: { qoder: { enabled: false }, "qoder-global": { enabled: false }, krill: { baseURL: mockURL, discoverModels: false } } } }] };
 for (const dir of [config, project]) writeFileSync(join(dir, "opencode.json"), JSON.stringify(settings));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key) && !/^OPENCODE|^QODER|^KRILL/i.test(key)));
 Object.assign(env, { XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_CACHE_HOME: join(root, "cache"),
