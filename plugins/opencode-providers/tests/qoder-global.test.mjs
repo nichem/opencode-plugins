@@ -13,6 +13,7 @@ import { discoverModels } from "../src/providers/qoder/models.js";
 import { modelInfo } from "../src/providers/qoder/index.js";
 import { getMachineId } from "../src/providers/qoder/cosy.js";
 import { QODER_GLOBAL } from "../src/providers/qoder-global/constants.js";
+import { QODER_CN } from "../src/providers/qoder/constants.js";
 
 function host(providers = {}, keys = {}) {
     const records = [], hooks = [], methods = [], defaults = [], integrations = new Map();
@@ -203,6 +204,76 @@ test("Qoder Global registration, authentication and discovery are region-isolate
         assert.equal(result.request.body.parameters.reasoning_effort, "xhigh");
         const chunks = await Array.fromAsync(result.stream);
         assert.deepEqual(chunks.at(-1).providerMetadata, { "qoder-global": {} });
+    });
+
+    await t.test("Global app-only models supplement chat without overriding shared IDs or changing CN", async () => {
+        const payload = {
+            chat: [
+                { key: "auto", display_name: "Chat Auto", price_factor: 0.5, max_input_tokens: 100000 },
+                { key: "chat-only", display_name: "Chat-only fixture" },
+            ],
+            app: [
+                { key: "auto", display_name: "App Auto", price_factor: 2, max_input_tokens: 50000 },
+                { key: "lmodel", display_name: "QoDuck", price_factor: 0, original_price_factor: 0.5,
+                    is_reasoning: true, is_vl: true, max_input_tokens: 180000,
+                    thinking_config: { disabled: {}, enabled: { efforts: { xhigh: {}, high: { is_default: true }, low: {} } } } },
+                { key: "app-only", display_name: "App-only fixture" },
+                null, {}, { key: " " }, { key: 123 },
+            ],
+            quest: [{ key: "quest-only" }], nap: [{ key: "nap-only" }],
+        };
+        globalThis.fetch = async url => {
+            if (url.endsWith("/exchange")) return Response.json({ token: "mock-app-catalog", expires_in: 3600 });
+            if (url.endsWith("/userinfo")) return Response.json({ id: "mock-app-user" });
+            assert.ok([QODER_GLOBAL.modelListURL, QODER_CN.modelListURL].includes(url));
+            return Response.json(payload);
+        };
+        const h = host({ krill: { enabled: false } }, {
+            qoder: "pt-fixture-app-cn", "qoder-global": "pt-fixture-app-global",
+        });
+        await plugin.setup(h.ctx);
+        const cn = h.records.find(record => record.info.id === "qoder");
+        const global = h.records.find(record => record.info.id === "qoder-global");
+        assert.deepEqual(cn.models.map(model => model.id), ["auto", "qmodel_38max", "chat-only"]);
+        assert.deepEqual(global.models.map(model => model.id), ["auto", "chat-only", "lmodel", "app-only"]);
+        assert.equal(global.models[0].name, "Chat Auto · 0.5×");
+        assert.equal(global.models[0].limit.context, 100000);
+        const duck = global.models.find(model => model.id === "lmodel");
+        assert.equal(duck.name, "QoDuck · 0×（原 0.5×）");
+        assert.equal(duck.limit.context, 180000);
+        assert.deepEqual(duck.capabilities.input, ["text", "image"]);
+        assert.deepEqual(duck.variants.map(variant => variant.id), ["xhigh", "high", "low", "none"]);
+        const live = await language(h, "qoder-global", "lmodel", { fetch: async (url, init) => {
+            assert.equal(url, QODER_GLOBAL.chatURL);
+            assert.equal(init.headers["X-Model-Key"], "lmodel");
+            return new Response(done);
+        } });
+        const result = await live.doStream({ prompt: [], providerOptions: { "qoder-global": { reasoningEffort: "none" } } });
+        assert.equal(result.request.body.model_config.key, "lmodel");
+        assert.equal(result.request.body.model_config.is_reasoning, true);
+        assert.equal(result.request.body.session_type, "qodercli");
+        assert.equal(result.request.body.business.product, "cli");
+        assert.equal(result.request.body.parameters.enable_thinking, false);
+        await Array.fromAsync(result.stream);
+    });
+
+    await t.test("Global app discovery supports a missing chat group and does not hardcode Qoduck", async () => {
+        let payload = { models: [{ key: "shared", display_name: "Legacy catalog", price_factor: 0.5 }],
+            app: [{ key: "shared", display_name: "App duplicate", price_factor: 2 }, { key: "lmodel", display_name: "QoDuck" }] };
+        globalThis.fetch = async url => {
+            if (url.endsWith("/exchange")) return Response.json({ token: "mock-app-fallback", expires_in: 3600 });
+            if (url.endsWith("/userinfo")) return Response.json({ id: "mock-app-fallback-user" });
+            return Response.json(payload);
+        };
+        const options = { [CONNECTION_PAT]: "pt-fixture-app-fallback" };
+        const models = await discoverModels(options, QODER_GLOBAL);
+        assert.deepEqual(models.map(model => model.id), ["auto", "shared", "lmodel"]);
+        assert.equal(models.find(model => model.id === "shared").name, "Legacy catalog");
+        payload = { app: [{ key: "lmodel", display_name: "QoDuck" }] };
+        assert.deepEqual((await discoverModels(options, QODER_GLOBAL)).map(model => model.id), ["auto", "lmodel"]);
+        payload = { chat: [{ key: "auto" }], app: [] };
+        assert.deepEqual((await discoverModels(options, QODER_GLOBAL)).map(model => model.id), ["auto"]);
+        assert.deepEqual((await discoverModels({ ...options, discoverModels: false }, QODER_GLOBAL)).map(model => model.id), ["auto"]);
     });
 
     await t.test("credit multipliers preserve zero, reject invalid values and refresh without stale prices", async () => {

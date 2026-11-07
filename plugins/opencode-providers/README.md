@@ -51,11 +51,13 @@ Qwen3.8-Max 提供 `low`、`medium`、`xhigh`、`none` 思考强度，在线模�
 
 国际版的 provider/integration ID 为 `qoder-global`，原中国区仍为 `qoder`，可以同时连接。两边使用独立的连接、认证缓存及模型列表；国际版通过 `openapi.qoder.sh` 认证，通过 `api3.qoder.sh` 发现模型并发送请求，不使用中国区的凭据或地址。切换账号会在下一次请求读取新凭据。
 
-内置 `qoder-global/auto`，启动时尝试发现账号可用模型及思考档位。认证和模型列表请求共用 6 秒期限，未连接或发现失败时保留 Auto。首次连接或切换账号后，执行 `opencode reload` 刷新列表，再用 `/models` 选择模型。`discoverModels: false` 可关闭发现，`providerID` 可自定义。
+内置 `qoder-global/auto`，启动时尝试发现账号可用模型及思考档位。读取模型接口的 `chat`（兼容 `models`）分组，并补充 `app` 分组独有的模型；同 ID 优先保留 `chat` 的参数和倍率，不合并 `quest`、`nap` 等任务分组。此补充仅作用于国际版，中国区保持原有行为。认证和模型列表请求共用 6 秒期限，未连接或发现失败时保留 Auto。首次连接或切换账号后，执行 `opencode reload` 刷新列表，再用 `/models` 选择模型。`discoverModels: false` 可关闭发现，`providerID` 可自定义。
 
 Auto 沿用上游适配器的 180000 上下文、32768 输出默认值；发现的模型优先采用服务端返回的上下文和能力参数，未提供时使用 200000 上下文、32768 输出默认值。这些默认值不代表服务端公布的规格，零成本标记也不代表免费。
 
-**Qoduck 是否出现取决于国际版接口对当前账号返回的模型列表。** 插件没有硬编码未经验证的 Qoduck 模型 ID，也不保证该模型可通过此 CLI 通道调用。截至 2026-11-07，[官方活动说明](https://docs.qoder.com/zh/events/qoduck-free)面向 Qoder 国际版个人用户，并注明 Qoder CLI 等产品暂不支持该活动。
+**Qoduck 是否出现取决于国际版接口对当前账号返回的模型列表。** 2026-11-07 实测接口将 `QoDuck`（ID `lmodel`）放在 `app` 分组，倍率为 `0×`、原倍率 `0.5×`；现有 CLI 请求通道的最小文本调用成功。旧版只读取 `chat` 时会漏掉该模型。插件按接口发现，不将 Qoduck 硬编码进保底列表。
+
+[官方活动说明](https://docs.qoder.com/zh/events/qoduck-free)仍注明 Qoder CLI 等产品暂不支持该活动。上述接口倍率和单次调用结果不代表官方承诺第三方 CLI 享有免费额度，也不保证所有账号或后续时段可用；实际可用性和计费以服务端为准。
 
 ## Qoder 模型倍率
 

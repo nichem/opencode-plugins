@@ -118,7 +118,7 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 
 凭据由 OpenCode 保存，插件读取当前激活账号。支持保存多个账号并手动切换；不做自动轮换或额度耗尽切号。首次连接或切换账号后，执行 `opencode reload` 刷新模型列表。
 
-Qoder 国际版与中国区可同时连接，凭据、接口和模型列表相互隔离。国际版 PAT 从 [Qoder 账号页面](https://qoder.com/account/integrations)创建；Qoduck 等模型是否可见、可调用，以国际版接口对该账号的支持情况为准。新增国际版入口不保证 Qoduck 的 CLI 通道可用，详见[供应商配置说明](./plugins/opencode-providers/README.md#qoder-global-认证和模型)。
+Qoder 国际版与中国区可同时连接，凭据、接口和模型列表相互隔离。国际版 PAT 从 [Qoder 账号页面](https://qoder.com/account/integrations)创建。国际版模型发现会补充 `app` 分组独有的模型，避免漏掉仅在该分组返回的 Qoduck（`lmodel`）；相同 ID 保留原 `chat` 分组的参数和倍率。Qoduck 的现有 CLI 通道最小调用已验证成功，但官方活动仍未承诺 CLI 免费权益，实际可用性和计费以服务端为准，详见[供应商配置说明](./plugins/opencode-providers/README.md#qoder-global-认证和模型)。
 
 两区在发现模型时也会读取 Credits 倍率，显示为 `模型名 · 0.5×`；有不同原倍率时一并标注。缺失倍率不推测，`0×` 不代表无限免费。倍率随 `opencode reload` 重新获取，不折算为 OpenCode 的美元 token 单价。
 

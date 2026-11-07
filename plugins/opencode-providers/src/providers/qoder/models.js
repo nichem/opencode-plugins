@@ -27,7 +27,14 @@ export async function discoverModels(options = {}, region = QODER_CN) {
         });
         if (!response.ok) return [...models.values()];
         const data = await response.json();
-        const list = Array.isArray(data?.chat) ? data.chat : Array.isArray(data?.models) ? data.models : [];
+        const list = [...(Array.isArray(data?.chat) ? data.chat : Array.isArray(data?.models) ? data.models : [])];
+        // Global advertises some callable models (including QoDuck) only in app.
+        // Keep chat metadata authoritative for shared IDs; task-specific groups
+        // such as quest/nap are not general chat model inventories.
+        if (region.region === "global" && Array.isArray(data?.app)) {
+            const primaryIDs = new Set(list.map(entry => entry?.key));
+            list.push(...data.app.filter(entry => !primaryIDs.has(entry?.key)));
+        }
         for (const entry of list) {
             if (!entry || typeof entry.key !== "string" || !entry.key.trim()) continue;
             const thinking = entry.thinking_config;
