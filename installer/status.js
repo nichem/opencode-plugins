@@ -6,16 +6,21 @@ import { join, resolve, sep } from "node:path";
 import { catalog, identify, pluginPath, repo } from "./catalog.js";
 import { nativeReplacement } from "./policy.js";
 const exec = promisify(execFile);
-export async function opencode(command) {
+export async function opencode(command, { target, env, cwd, signal, timeout = 60000 } = {}) {
     const commands = { version: ["--version"], list: ["plugin", "list"], reload: ["reload"] };
-    const args = commands[command];
+    const item = identify(target);
+    if (command === "add" && (!item || !/^[a-f0-9]{40}$/.test(item.revision)
+        || target !== `git+${repo}#${item.revision}::path:${pluginPath(item.id)}`)) throw new Error("无效的插件安装地址");
+    const args = command === "add" ? ["plugin", "add", target] : commands[command];
     if (!args) throw new Error("Unknown OpenCode command");
+    const options = { windowsHide: true, timeout, maxBuffer: 2 * 1024 * 1024, env, cwd, signal };
+    // Dynamic arguments are restricted to our canonical URL and a hexadecimal SHA.
     return process.platform === "win32"
-        ? exec(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `opencode ${args.join(" ")}`], { windowsHide: true, timeout: 60000, maxBuffer: 2 * 1024 * 1024 })
-        : exec("opencode", args, { timeout: 60000, maxBuffer: 2 * 1024 * 1024 });
+        ? exec(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `opencode ${args.join(" ")}`], options)
+        : exec("opencode", args, options);
 }
-export async function latestRevision() {
-    const { stdout } = await exec("git", ["ls-remote", repo, "refs/heads/main"], { windowsHide: true, timeout: 30000 });
+export async function latestRevision({ signal } = {}) {
+    const { stdout } = await exec("git", ["ls-remote", repo, "refs/heads/main"], { windowsHide: true, timeout: 30000, signal });
     const sha = stdout.trim().split(/\s+/)[0];
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("无法获取 GitHub main 版本");
     return sha;
@@ -41,11 +46,12 @@ function configuredInstallations(configs, id, versions) {
 
 // Only commit metadata and nonrecursive root/plugins trees are requested.
 // Never descend into a plugin, request blobs or read agent documents.
-export async function revisionTrees(revision, request = fetch) {
+export async function revisionTrees(revision, request = fetch, { signal } = {}) {
     if (!/^[a-f0-9]{7,40}$/.test(revision)) throw new Error("无效的提交版本");
     const get = async path => {
         const response = await request(`https://api.github.com/repos/nichem/opencode-plugins/${path}`, {
-            headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30000),
+            headers: { Accept: "application/vnd.github+json" },
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
         });
         if (!response.ok) throw new Error(response.status === 403 && response.headers?.get("x-ratelimit-remaining") === "0"
             ? "GitHub API 匿名请求额度已用尽 (403)" : `GitHub 目录版本检查失败 (${response.status})`);
@@ -73,13 +79,13 @@ export async function revisionTrees(revision, request = fetch) {
 
 // Fetch commits first, then only the root and optional plugins container trees.
 // GitHub supports tree:0 but rejects tree:1. No plugin tree or blob is fetched.
-export async function gitRevisionTrees(revisions, { run = exec, sources = new Map() } = {}) {
+export async function gitRevisionTrees(revisions, { run = exec, sources = new Map(), signal } = {}) {
     const refs = [...new Set(revisions)];
     if (refs.some(ref => !/^[a-f0-9]{7,40}$/.test(ref))) throw new Error("无效的提交版本");
     if (!refs.length) return new Map();
     const directory = await mkdtemp(join(tmpdir(), "opencode-plugin-versions-"));
     const git = async args => (await run("git", ["-C", directory, ...args], {
-        windowsHide: true, timeout: 30000, maxBuffer: 2 * 1024 * 1024,
+        windowsHide: true, timeout: 30000, maxBuffer: 2 * 1024 * 1024, signal,
         env: { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" },
     })).stdout;
     const fetchObjects = args => git(["-c", "protocol.version=2", "fetch", "--quiet", "--no-tags",
@@ -90,6 +96,7 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
         if (!ids.length) return;
         try { await fetchObjects([...options, repo, ...ids]); }
         catch (error) {
+            signal?.throwIfAborted();
             failure = error;
             // One unavailable object must not discard the other versions.
             if (ids.length > 1) for (const id of ids) {
@@ -170,7 +177,7 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
 }
 
 export async function loadVersionTrees(configs, latest, installed = "", readTrees = revisionTrees,
-    { readGitTrees = gitRevisionTrees, report = () => {}, hostVersion } = {}) {
+    { readGitTrees = gitRevisionTrees, report = () => {}, hostVersion, signal } = {}) {
     const versions = installedVersions(installed);
     const supported = catalog.filter(plugin => !nativeReplacement(plugin, hostVersion));
     const revisions = new Set(supported.flatMap(p => configuredInstallations(configs, p.id, versions)).map(item => item.revision).filter(Boolean));
@@ -178,8 +185,9 @@ export async function loadVersionTrees(configs, latest, installed = "", readTree
     revisions.add(latest);
     const failures = new Map();
     const results = await Promise.all([...revisions].map(async ref => {
-        try { return [ref, await readTrees(ref)]; } catch (error) { failures.set(ref, error); return [ref, undefined]; }
+        try { return [ref, await readTrees(ref, undefined, { signal })]; } catch (error) { failures.set(ref, error); return [ref, undefined]; }
     }));
+    signal?.throwIfAborted();
     const trees = new Map(results);
     if (failures.size) {
         report(`${failures.values().next().value.message}；正在改用 Git 元数据检查版本…`);
@@ -194,9 +202,9 @@ export async function loadVersionTrees(configs, latest, installed = "", readTree
                 if (!sources.has(ref)) sources.set(ref, new Set());
                 sources.get(ref).add(item.revision);
             }
-            const fallback = await readGitTrees([...failures.keys()], { sources });
+            const fallback = await readGitTrees([...failures.keys()], { sources, signal });
             for (const ref of failures.keys()) if (fallback.has(ref)) trees.set(ref, fallback.get(ref));
-        } catch { /* Keep failed checks unknown; never infer latest. */ }
+        } catch { signal?.throwIfAborted(); /* Keep failed checks unknown; never infer latest. */ }
         if ([...failures.keys()].some(ref => !trees.get(ref))) {
             report("部分 Git 目录版本仍无法确认；请检查 Git 和 GitHub 网络连接后重试。未修改配置。");
         }

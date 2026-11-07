@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { parse, parseTree, findNodeAtLocation, createScanner, SyntaxKind, modify, applyEdits } from "jsonc-parser";
 import { identify, specifier } from "./catalog.js";
+import { BACKUP_LIMIT, pruneBackups } from "./backups.js";
 
 export function configPaths(env = process.env) {
     const directory = env.OPENCODE_CONFIG_DIR || join(env.XDG_CONFIG_HOME || join(homedir(), ".config"), "opencode");
@@ -119,8 +120,9 @@ export function planChanges(configs, selected, action, revision) {
     }).filter(c => c.next !== c.original);
 }
 
-export async function writeChanges(changes, backupRoot) {
+export async function writeChanges(changes, backupRoot, { backupLimit = BACKUP_LIMIT, warn = console.warn } = {}) {
     if (!changes.length) return;
+    if (!Number.isInteger(backupLimit) || backupLimit < 1) throw new Error("备份上限必须为正整数");
     const backup = join(backupRoot, `${Date.now()}-${randomUUID()}`);
     await mkdir(backup, { recursive: true });
     await writeFile(join(backup, "manifest.json"), JSON.stringify(changes.map((c, i) => ({ path: c.path, backup: c.original === null ? null : `${i}.json.bak` })), null, 2), { mode: 0o600 });
@@ -148,5 +150,9 @@ export async function writeChanges(changes, backupRoot) {
         }
         throw error;
     }
+    // Cleanup is maintenance after a successful save; its failure must not roll
+    // back new configuration or claim that installation itself failed.
+    try { await pruneBackups(backupRoot, { limit: backupLimit, keep: backup }); }
+    catch { warn("配置已保存，但旧备份清理失败；备份已保留，将在下次保存时重试。"); }
     return backup;
 }
