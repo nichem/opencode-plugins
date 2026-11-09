@@ -1,10 +1,9 @@
 import { Plugin } from "@opencode/plugin";
 import { setupQoder } from "./providers/qoder/index.js";
-import { setupKrill } from "./providers/krill/index.js";
 import { setupQoderGlobal } from "./providers/qoder-global/index.js";
 
 // Each provider owns its authentication, model discovery and transport.
-const providers = new Map([["qoder", setupQoder], ["krill", setupKrill], ["qoder-global", setupQoderGlobal]]);
+const providers = new Map([["qoder", setupQoder], ["qoder-global", setupQoderGlobal]]);
 
 export default Plugin.define({
     id: "opencode-providers",
@@ -13,6 +12,8 @@ export default Plugin.define({
         if (typeof options !== "object" || options === null || Array.isArray(options))
             throw new Error("opencode-providers: providers must be an object");
         for (const name of Object.keys(options)) {
+            // Ignore removed provider options so existing Qoder installations still load.
+            if (name === "krill") continue;
             if (!providers.has(name))
                 throw new Error(`opencode-providers: unknown provider '${name}'`);
         }

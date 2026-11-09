@@ -2,7 +2,7 @@
   "name": "opencode-providers",
   "version": "0.1.0",
   "private": true,
-  "description": "Qoder CN, Qoder Global and Krill Codex provider integrations for OpenCode 2.x.",
+  "description": "Qoder CN and Qoder Global provider integrations for OpenCode 2.x.",
   "type": "module",
   "license": "MIT",
   "main": "./index.js",
@@ -23,7 +23,6 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@ai-sdk/openai": "3.0.125",
     "@opencode/plugin": "2.0.27"
   },
   "devDependencies": {

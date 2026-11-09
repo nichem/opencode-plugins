@@ -33,7 +33,7 @@ opencode plugin add 'git+https://github.com/nichem/opencode-plugins.git#main::pa
 name: reviewer
 description: 检查代码缺陷并提供修改建议
 mode: subagent
-model: krill/gpt-6.1-sol
+model: qoder/auto
 permissions:
   - action: edit
     resource: "*"

@@ -17,7 +17,7 @@ mkdirSync(project, { recursive: true });
 mkdirSync(join(root, "home"), { recursive: true });
 mkdirSync(config, { recursive: true });
 const settings = { plugins: [{ package: fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/"),
-    options: { providers: { qoder: { discoverModels: false }, "qoder-global": { discoverModels: false }, krill: { enabled: false } } } }] };
+    options: { providers: { qoder: { discoverModels: false }, "qoder-global": { discoverModels: false } } } }] };
 for (const dir of [config, project]) writeFileSync(join(dir, "opencode.json"), JSON.stringify(settings));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key) && !/^OPENCODE|^QODER/i.test(key)));

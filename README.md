@@ -10,7 +10,7 @@
 
 | 插件 | 功能 | 使用入口 | 配置位置 |
 | --- | --- | --- | --- |
-| [opencode-providers](./plugins/opencode-providers/README.md) | Qoder CN、Qoder 国际版与 Krill Codex 接入、模型发现、账号切换 | `/connect`、`/models` | `opencode.json` |
+| [opencode-providers](./plugins/opencode-providers/README.md) | Qoder CN 与 Qoder 国际版接入、模型发现、账号切换 | `/connect`、`/models` | `opencode.json` |
 | [opencode-goal（旧版兼容）](./plugins/opencode-goal/README.md) | 仅用于 OpenCode < 2.2.1；新版使用原生目标管理 | `/goal` | 仅旧版需要 `opencode.json` + `cli.json` |
 | [opencode-message-delete](./plugins/opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./plugins/opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
@@ -114,15 +114,12 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 | --- | --- | --- |
 | Qoder CN | 中国区 `pt-` 开头的 PAT | 内置 Auto、Qwen3.8-Max，并尝试发现账号可用模型 |
 | Qoder Global | 国际版 `pt-` 开头的 PAT | 独立入口 `qoder-global`，内置 Auto，并尝试发现账号可用模型 |
-| Krill | API Key | `/codex/v1` 的 OpenAI Responses 通道，内置两个 GPT 模型并发现更多 GPT 文本模型 |
 
 凭据由 OpenCode 保存，插件读取当前激活账号。支持保存多个账号并手动切换；不做自动轮换或额度耗尽切号。首次连接或切换账号后，执行 `opencode reload` 刷新模型列表。
 
 Qoder 国际版与中国区可同时连接，凭据、接口和模型列表相互隔离。国际版 PAT 从 [Qoder 账号页面](https://qoder.com/account/integrations)创建。国际版模型发现会补充 `app` 分组独有的模型，避免漏掉仅在该分组返回的 Qoduck（`lmodel`）；相同 ID 保留原 `chat` 分组的参数和倍率。Qoduck 的现有 CLI 通道最小调用已验证成功，但官方活动仍未承诺 CLI 免费权益，实际可用性和计费以服务端为准，详见[供应商配置说明](./plugins/opencode-providers/README.md#qoder-global-认证和模型)。
 
 两区在发现模型时也会读取 Credits 倍率，显示为 `模型名 · 0.5×`；有不同原倍率时一并标注。缺失倍率不推测，`0×` 不代表无限免费。倍率随 `opencode reload` 重新获取，不折算为 OpenCode 的美元 token 单价。
-
-Krill 的模型列表只提供 ID，长度与能力参数使用插件默认值，也可在插件选项中覆盖。其他模型系列不自动加入 Codex 通道。具体参数见 [供应商配置说明](./plugins/opencode-providers/README.md)。
 
 ### 使用预设 agent
 
@@ -224,7 +221,7 @@ opencode plugin update
 
 更新后重新打开终端界面。安装状态可通过 `opencode plugin list` 查看。
 
-迁移旧配置时，移除原来的 Qoder 插件和原版 `opencode-goal` npm 条目，避免重复注册。旧 `provider.krill` 配置应在通过 `/connect` 保存密钥并验证连接后移除。插件本身不会自动改写旧配置或导入密钥。
+迁移旧配置时，移除原来的 Qoder 插件和原版 `opencode-goal` npm 条目，避免重复注册。Krill 接入已移除，遗留的插件选项 `options.providers.krill` 会被忽略，可自行清理；已有连接凭据不会自动删除。插件本身不会自动改写旧配置或导入密钥。
 
 ## 开发与许可
 

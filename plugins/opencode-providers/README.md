@@ -1,6 +1,6 @@
 # opencode-providers
 
-个人维护的 OpenCode **2.x** 多供应商插件，目前支持 **Qoder 中国区**、**Qoder 国际版**和 **Krill Codex**。
+个人维护的 OpenCode **2.x** 多供应商插件，目前支持 **Qoder 中国区**和 **Qoder 国际版**。
 
 针对 `@opencode/plugin 2.0.27` 接口适配。使用 Node.js 24+；JavaScript 源码直接加载，无需编译。
 
@@ -20,7 +20,6 @@
             "discoverModels": true,
             "setDefault": false
           },
-          "krill": { "enabled": true, "discoverModels": true },
           "qoder-global": { "enabled": true, "discoverModels": true, "setDefault": false }
         }
       }
@@ -29,11 +28,13 @@
 }
 ```
 
-也可以直接在 `plugins` 中填写上述 Git 地址字符串，默认启用三个供应商及模型发现。私有仓库需要本机 Git 访问权限。中国区和国际版的 `setDefault: true` 分别将默认模型设为 `qoder/auto` 和 `qoder-global/auto`；默认不会覆盖你的模型选择。各供应商均可通过 `enabled: false` 单独关闭。
+也可以直接在 `plugins` 中填写上述 Git 地址字符串，默认启用两个供应商及模型发现。私有仓库需要本机 Git 访问权限。中国区和国际版的 `setDefault: true` 分别将默认模型设为 `qoder/auto` 和 `qoder-global/auto`；默认不会覆盖你的模型选择。各供应商均可通过 `enabled: false` 单独关闭。
 
 这是服务端插件，不注册到 `cli.json`。更新仓库后执行 `opencode plugin update 'git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers'` 更新安装包。
 
-不要同时启用旧 Qoder 插件或旧的 `provider.krill` 配置和本插件的同名供应商。已有 Krill API Key 应先通过 `/connect` 存入 OpenCode，再移除旧配置。本插件自身不会改写全局配置，也不兼容 1.x 的插件接口。
+不要同时启用旧 Qoder 插件和本插件的同名供应商。本插件自身不会改写全局配置，也不兼容 1.x 的插件接口。
+
+Krill 接入已移除，不再注册对应的连接或模型。遗留的 `options.providers.krill` 会被忽略，可自行清理；已有连接凭据不会自动删除。
 
 ## Qoder CN 认证
 
@@ -65,34 +66,6 @@ Auto 沿用上游适配器的 180000 上下文、32768 输出默认值；发现�
 
 倍率为本次模型列表返回的 Credits 消耗参考值，不是美元单价，不填入 OpenCode 的 token 价格字段。`0×` 如实展示，但不表示无限免费；实际消耗与活动额度以 Qoder 为准。接口未提供有效当前倍率、未连接或发现失败时不显示倍率，也不会把原倍率当成当前倍率。执行 `opencode reload` 可重新获取；不会在界面中按促销时段自行推算或定时刷新倍率。
 
-## Krill 认证和模型
-
-在 `/connect` 中选择 **Krill** 并输入 API Key。密钥只读取 OpenCode 当前连接，不从环境变量、配置或文件兜底读取；切换账号后，已缓存的 SDK 也会在下一次请求读取新凭据。
-
-默认接口为 `https://api.krill-code.net/codex/v1`，使用 OpenAI **Responses** 协议。内置 `gpt-5.6-sol` 和 `gpt-6.1-sol`，沿用迁移前的 272000 上下文、128000 输出上限，支持 `low`、`medium`、`high`、`xhigh` 思考档位，默认 `medium`、简短输出和 `store: false`。这些限制来自原配置，不代表服务端公布的规格；未提供定价数据。
-
-启动时通过 `/models` 发现 GPT 文本模型，6 秒超时或失败时保留内置模型。网关列表还包含其他系列，因此不会自动将 Claude、图片、音频等模型加入此 Codex 通道。首次连接或换账号后执行 `opencode reload` 刷新模型列表。
-
-列表接口仅返回 ID，新增模型默认使用保守的 200000 上下文、32768 输出上限。可以在插件 `options.providers.krill` 中覆盖名称、长度、输入类型和思考档位，或显式添加兼容 Responses 的模型：
-
-```json
-{
-  "enabled": true,
-  "discoverModels": true,
-  "baseURL": "https://api.krill-code.net/codex/v1",
-  "models": {
-    "gpt-6.1-sol": {
-      "contextWindow": 272000,
-      "maxTokens": 128000,
-      "input": ["text"],
-      "efforts": ["low", "medium", "high", "xhigh"]
-    }
-  }
-}
-```
-
-`providerID` 默认 `krill`，可自定义。模型参数覆盖不会改变服务端的实际能力或配额。
-
 ## 源码结构
 
 ```text
@@ -107,8 +80,6 @@ src/providers/qoder/encoding.js  请求编码
 src/providers/qoder-global/index.js  国际版独立入口，复用 Qoder 协议实现
 src/providers/qoder-global/constants.js  国际版接口和保底模型
 src/providers/qoder-global/language-model.js  国际版 AI SDK 工厂
-src/providers/krill/index.js     /connect 注册、Responses SDK 和实时凭据
-src/providers/krill/models.js    内置模型、模型发现和参数覆盖
 ```
 
 新增供应商时增加 `src/providers/<name>/`，导出 setup 函数并注册到入口的 `providers` 映射。各供应商使用独立的 provider/integration ID；Qoder 两个地区共享协议实现，但地区参数由各自入口固定。
@@ -122,12 +93,9 @@ src/providers/krill/models.js    内置模型、模型发现和参数覆盖
 ```powershell
 npm run check
 npm test
-node scripts/smoke-krill.mjs "C:/path/to/opencode2.exe"
 ```
 
 测试使用模拟网络和虚构 PAT，覆盖 2.x 模型 schema、供应商隔离、账号切换、模型发现、工具约束、流式结束、取消和超时。国际版测试还覆盖同一 PAT 在两区的并发认证与缓存隔离、独立设备标识和凭据回退禁止。测试不会使用真实 PAT 请求 Qoder；真实账号端到端验证仍需在 2.x 中进行。
-
-Krill 冒烟测试使用独立数据库和本地模拟 Responses 服务，验证真实 2.x 插件加载、连接密钥、生成及切换账号，不读取本机 API Key。
 
 已在 Windows 的 `@opencode/cli 2.2.6` 上验证：中国区和国际版同时加载，中国区两个内置模型及国际版 Auto 均可见，两边的生成请求分别到达认证代码并提示连接对应供应商。该验证使用隔离的配置、数据库和凭据目录，没有调用真实 Qoder 接口，也未验证真实国际版账号或 Qoduck 的可用性。可重复执行：
 

@@ -7,10 +7,10 @@ import { loadAgents, parseAgent, registerAgents } from "../src/load.js";
 
 test("plain Markdown and v2 frontmatter become agent definitions", () => {
     assert.equal(parseAgent("Test prompt", "review.md").id, "bundled-review");
-    const agent = parseAgent("---\nname: demo\nmode: subagent\nmodel: krill/gpt-6.1-sol\npermissions:\n  - action: edit\n    resource: '*'\n    effect: deny\n---\nTest only", "x.md");
+    const agent = parseAgent("---\nname: demo\nmode: subagent\nmodel: qoder/auto\npermissions:\n  - action: edit\n    resource: '*'\n    effect: deny\n---\nTest only", "x.md");
     assert.equal(agent.system, "Test only");
     assert.equal(agent.mode, "subagent");
-    assert.equal(agent.model.providerID, "krill");
+    assert.equal(agent.model.providerID, "qoder");
     assert.equal(agent.permissions.at(-1).effect, "deny");
 });
 

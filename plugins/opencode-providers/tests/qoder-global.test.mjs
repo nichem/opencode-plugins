@@ -55,7 +55,7 @@ async function language(h, providerID, modelID = "auto", options = {}) {
     return event.language;
 }
 
-const offline = { qoder: { discoverModels: false }, krill: { discoverModels: false }, "qoder-global": { discoverModels: false } };
+const offline = { qoder: { discoverModels: false }, "qoder-global": { discoverModels: false } };
 const done = "data: [DONE]\n\n";
 
 test("Qoder Global registration, authentication and discovery are region-isolated", async t => {
@@ -75,11 +75,11 @@ test("Qoder Global registration, authentication and discovery are region-isolate
         rmSync(root, { recursive: true, force: true });
     });
 
-    await t.test("all three providers coexist; the global SDK and hooks stay scoped", async () => {
+    await t.test("both Qoder providers coexist; the global SDK and hooks stay scoped", async () => {
         globalThis.fetch = async () => assert.fail("Disconnected registration must not access the network");
         const h = host();
         await plugin.setup(h.ctx);
-        assert.deepEqual(h.records.map(record => record.info.id), ["qoder", "krill", "qoder-global"]);
+        assert.deepEqual(h.records.map(record => record.info.id), ["qoder", "qoder-global"]);
         assert.deepEqual(h.defaults, []);
         assert.equal(h.integrations.get("qoder").name, "Qoder CN");
         assert.equal(h.integrations.get("qoder-global").name, "Qoder Global");
@@ -93,7 +93,7 @@ test("Qoder Global registration, authentication and discovery are region-isolate
         assert.equal(model.specificationVersion, "v3");
         await assert.rejects(model.doStream({ prompt: [] }), /select Qoder Global/);
         const globalHook = h.hooks.find(hook => hook.scope.providerID === "qoder-global");
-        for (const providerID of ["qoder", "krill", "other"]) {
+        for (const providerID of ["qoder", "other"]) {
             const foreign = { model: { providerID, id: "auto" }, options: {} };
             await globalHook.run(foreign);
             assert.equal(foreign.language, undefined);
@@ -103,8 +103,8 @@ test("Qoder Global registration, authentication and discovery are region-isolate
     await t.test("the global provider can be disabled or use a custom ID and default", async () => {
         const disabled = host({ ...offline, "qoder-global": { enabled: false } });
         await plugin.setup(disabled.ctx);
-        assert.deepEqual(disabled.records.map(record => record.info.id), ["qoder", "krill"]);
-        const custom = host({ qoder: { enabled: false }, krill: { enabled: false },
+        assert.deepEqual(disabled.records.map(record => record.info.id), ["qoder"]);
+        const custom = host({ qoder: { enabled: false },
             "qoder-global": { providerID: "qoder-international", discoverModels: false, setDefault: true } });
         await plugin.setup(custom.ctx);
         assert.equal(custom.records[0].info.integrationID, "qoder-international");
@@ -181,7 +181,7 @@ test("Qoder Global registration, authentication and discovery are region-isolate
             return Response.json({ chat: [{ key: "fixture-qoduck", display_name: "Qoduck", price_factor: 0, original_price_factor: 0.5, is_reasoning: true,
                 is_vl: true, max_input_tokens: 123456, thinking_config: { enabled: { efforts: { high: {}, xhigh: {} } }, disabled: true } }] });
         };
-        const h = host({ qoder: { discoverModels: false }, krill: { enabled: false } }, { "qoder-global": "pt-fixture-discovery" });
+        const h = host({ qoder: { discoverModels: false } }, { "qoder-global": "pt-fixture-discovery" });
         await plugin.setup(h.ctx);
         assert.ok(requests.every(url => new URL(url).hostname.endsWith(".qoder.sh")));
         assert.equal(h.records[0].models.some(model => model.id === "fixture-qoduck"), false);
@@ -228,7 +228,7 @@ test("Qoder Global registration, authentication and discovery are region-isolate
             assert.ok([QODER_GLOBAL.modelListURL, QODER_CN.modelListURL].includes(url));
             return Response.json(payload);
         };
-        const h = host({ krill: { enabled: false } }, {
+        const h = host({}, {
             qoder: "pt-fixture-app-cn", "qoder-global": "pt-fixture-app-global",
         });
         await plugin.setup(h.ctx);

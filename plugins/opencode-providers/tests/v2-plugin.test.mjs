@@ -13,8 +13,8 @@ function host(options = {}, key) {
     const state = { key, resolves: 0 };
     const ctx = {
         options: { ...options, providers: typeof options.providers === "object" && !Array.isArray(options.providers)
-            ? { krill: { enabled: false }, "qoder-global": { enabled: false }, ...options.providers }
-            : options.providers ?? { krill: { enabled: false }, "qoder-global": { enabled: false } } },
+            ? { "qoder-global": { enabled: false }, ...options.providers }
+            : options.providers ?? { "qoder-global": { enabled: false } } },
         integration: {
             async transform(fn) {
                 fn({
@@ -99,6 +99,16 @@ test("provider disabled, custom ID, and invalid configuration", async () => {
     for (const providers of [[], "invalid", { unknown: {} }, { qoder: false }]) {
         await assert.rejects(plugin.setup(host({ providers }).ctx), /opencode-providers/);
     }
+});
+
+test("removed Krill options do not register providers or block Qoder", async t => {
+    t.mock.method(globalThis, "fetch", () => assert.fail("Removed provider must not send network requests"));
+    const h = host({ providers: { qoder: { discoverModels: false }, krill: { enabled: true } } });
+    await plugin.setup(h.ctx);
+    assert.deepEqual(h.records.map(record => record.info.id), ["qoder"]);
+    assert.deepEqual([...h.integrations.keys()], ["qoder"]);
+    assert.deepEqual(h.methods.map(method => method.integrationID), ["qoder"]);
+    assert.deepEqual(h.hooks.map(hook => hook.scope), [{ providerID: "qoder" }]);
 });
 
 test("2.x cached model resolves account changes and uses host fetch", async t => {
