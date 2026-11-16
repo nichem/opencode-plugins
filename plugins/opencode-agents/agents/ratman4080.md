@@ -1,6 +1,7 @@
 ---
-description: "ratman4080"
-mode: all
+description: ratman4080
+mode: primary
+color: "#e0a458"
 ---
 
 <project_instructions>
