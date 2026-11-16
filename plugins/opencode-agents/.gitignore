@@ -1,4 +1,1 @@
 node_modules/
-# User-owned agent documents: publish only after explicit authorization.
-/agents/*
-!/agents/.gitkeep
