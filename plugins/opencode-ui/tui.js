@@ -1,4 +1,4 @@
-import { findBlocks, supportedRange, supports, ThinkingAdapter } from "./src/adapter.js";
+import { findBlocks, layoutFor, supportedRange, ThinkingAdapter } from "./src/adapter.js";
 import { liveDuration } from "./src/duration.js";
 import { trackTranscript } from "./src/transcript.js";
 
@@ -6,8 +6,9 @@ import { trackTranscript } from "./src/transcript.js";
 export default {
     id: "opencode-ui.tui",
     setup(ctx) {
-        const compatible = supports(ctx.app.version);
-        const adapter = new ThinkingAdapter(ctx);
+        const layout = layoutFor(ctx.app.version);
+        const compatible = layout !== undefined;
+        const adapter = new ThinkingAdapter(ctx, layout);
         let matched = 0;
         /** @type {string | undefined} */
         let failure;
@@ -29,7 +30,7 @@ export default {
                 stage = "定位会话时间线";
                 const scroll = transcript?.current(route.sessionID);
                 stage = "识别思考区块";
-                const blocks = findBlocks(ctx.renderer.root, new Set(messages.map(message => message.id)), scroll);
+                const blocks = findBlocks(ctx.renderer.root, new Set(messages.map(message => message.id)), scroll, layout);
                 matched = blocks.length;
                 stage = "计算思考耗时";
                 const status = ctx.data.session.status(route.sessionID), now = Date.now();
@@ -55,7 +56,7 @@ export default {
                 ctx.ui.toast.show({ variant: compatible && !failure ? "info" : "warning",
                     message: !compatible ? `UI 增强暂不支持 OpenCode ${ctx.app.version}，当前支持 ${supportedRange}。`
                         : failure ? `UI 增强因运行异常已停止（OpenCode ${ctx.app.version}；${failure}）。`
-                        : `UI 增强已启用，当前识别到 ${matched} 个思考区块。` });
+                        : `UI 增强已启用（OpenCode ${ctx.app.version}；${layout === "markdown" ? "2.4+ Markdown/Code" : "2.0–2.3 Code"} 布局），当前识别到 ${matched} 个思考区块。` });
             } }] }));
         if (!compatible) {
             ctx.ui.toast.show({ variant: "warning", message: `UI 增强暂不支持 OpenCode ${ctx.app.version}，当前支持 ${supportedRange}。` });

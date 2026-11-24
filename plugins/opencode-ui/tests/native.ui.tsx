@@ -41,15 +41,19 @@ function Row(props: { running: boolean; expanded: boolean; animations: boolean; 
 }
 
 async function fixture({ grouped = true, animations = true, expanded = false, running = true, lines = 5,
-    rowID = "msg_fixture", anonymous = false, width = 80 } = {}) {
+    rowID = "msg_fixture", anonymous = false, width = 80, rendered = false } = {}) {
     const [state, setState] = createSignal({ expanded, running, animations, revision: 1,
         outcome: "" as "" | "completed" | "interrupted" });
     let anchor!: BoxRenderable, scroll!: ScrollBoxRenderable, composer!: BoxRenderable, style!: SyntaxStyle;
     let toggles = 0;
     const toggle = () => { toggles++; setState(value => ({ ...value, expanded: !value.expanded })); };
-    const content = Array.from({ length: lines }, (_, index) => `Artificial thought line ${index + 1}`).join("\n");
+    const content = Array.from({ length: lines }, (_, index) => `Artificial thought line ${index + 1}`).join(rendered ? "\n\n" : "\n");
     function Body() {
-        return <box paddingLeft={1}><code content={content} syntaxStyle={style} drawUnstyledText={true} /></box>;
+        return <box paddingLeft={1}>
+            <Show when={rendered} fallback={<code content={content} syntaxStyle={style} drawUnstyledText={true} />}>
+                <markdown content={content} syntaxStyle={style} streaming={state().running} conceal={true} />
+            </Show>
+        </box>;
     }
     const screen = await testRender(() => {
         style = SyntaxStyle.fromStyles({ default: { fg: "#999999" } }, useRenderer().nativeScene);
@@ -124,13 +128,13 @@ test("native Solid slots do not hide a thinking group, and its footer collapses 
 
 // Mount a contribution at the fixture's actual composer boundary, preserving
 // the reactive slot input used when the host reuses a session view.
-function startPlugin(s: Awaited<ReturnType<typeof fixture>>, messages: any[], status: "idle" | "running" = "running") {
+function startPlugin(s: Awaited<ReturnType<typeof fixture>>, messages: any[], status: "idle" | "running" = "running", version = "2.1.2") {
     const route = { type: "session", sessionID: "fixture" };
     const slotInput = { sessionID: "fixture" };
     const notices: any[] = [];
     const commands: any[] = [];
     let marker: BoxRenderable | undefined;
-    const cleanup = plugin.setup({ ...s.ctx, app: { version: "2.1.2" }, options: {},
+    const cleanup = plugin.setup({ ...s.ctx, app: { version }, options: {},
         data: { session: { status: () => status, message: { list: () => messages } } },
         ui: { router: { current: () => route }, toast: { show: (notice: any) => notices.push(notice) },
             slot(claim: any) {
@@ -149,6 +153,27 @@ function messagesAt(now: number, id = "msg_fixture", elapsed = 2000) {
         { type: "reasoning", text: "Current artificial thought", time: { created: now - elapsed } },
     ] }];
 }
+
+test("2.4.1 setup selects Markdown compatibility for anonymous groups and footer click rechecks", async () => {
+    const s = await fixture({ anonymous: true, expanded: true, rendered: true, lines: 40 });
+    const running = startPlugin(s, messagesAt(Date.now()), "running", "2.4.1");
+    try {
+        await s.renderOnce();
+        assert.equal(running.notices.length, 0);
+        assert.match(s.captureCharFrame(), /Thinking: Fixture\s+· 2s/);
+        running.commands.find(command => command.id === "ui.status").run();
+        assert.match(running.notices.at(-1).message, /OpenCode 2\.4\.1；2\.4\+ Markdown\/Code 布局.*1 个思考区块/);
+        s.scroll.scrollTo(s.scroll.scrollHeight); await s.renderOnce();
+        assert.match(s.captureCharFrame(), /收起思考/);
+        const [footer] = collapseControls(s.anchor);
+        await s.mockMouse.click(footer.x + 1, footer.y);
+        await new Promise(resolve => setTimeout(resolve, 280));
+        await s.renderOnce();
+        assert.equal(s.toggles(), 1);
+        assert.equal(s.state().expanded, false);
+        assert.doesNotMatch(s.captureCharFrame(), /收起思考|Artificial thought line/);
+    } finally { running.cleanup(); await s.close(); }
+});
 
 test("completed and interrupted reply footers coexist with the collapse control across group replacement", async () => {
     for (const outcome of ["completed", "interrupted"] as const) {

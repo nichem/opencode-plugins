@@ -1,8 +1,8 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { BoxRenderable, CodeRenderable, MouseEvent, ScrollBoxRenderable, SyntaxStyle, TextRenderable } from "@opentui/core";
+import { BoxRenderable, CodeRenderable, MarkdownRenderable, MouseEvent, ScrollBoxRenderable, SyntaxStyle, TextRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { findBlocks, supports, ThinkingAdapter } from "../src/adapter.js";
+import { findBlocks, layoutFor, supports, ThinkingAdapter } from "../src/adapter.js";
 import plugin from "../tui.js";
 
 /** @param {import('@opentui/core').BaseRenderable} node
@@ -12,14 +12,15 @@ function collapseControls(node) {
         ? [child] : collapseControls(child));
 }
 
-// Artificial documents only. Shapes mirror the two native v2.1.2 components.
+// Artificial documents only. v2.4+ can render either Markdown or Code bodies.
 async function fixture({ running = true, expanded = false, individual = false, showMode = false, lines = 5, width = 80,
-    rowID = "msg_fixture" } = {}) {
+    rowID = "msg_fixture", version = "2.1.2", rendered = false } = {}) {
     const screen = await createTestRenderer({ width, height: 16 });
     const { renderer } = screen;
     const theme = { text: { muted: "#999999" } };
     const ctx = { renderer, theme };
-    const adapter = new ThinkingAdapter(ctx);
+    const layout = layoutFor(version);
+    const adapter = new ThinkingAdapter(ctx, layout);
     const syntaxStyle = SyntaxStyle.fromStyles({ default: { fg: "#999999" } }, renderer.nativeScene);
     const scroll = new ScrollBoxRenderable(renderer, { width: "100%", height: 14 });
     renderer.root.add(scroll);
@@ -58,13 +59,14 @@ async function fixture({ running = true, expanded = false, individual = false, s
             anchor.add(body);
             const border = new BoxRenderable(renderer, { paddingLeft: individual ? showMode ? 1 : 3 : 1 });
             body.add(border);
-            border.add(new CodeRenderable(renderer, { content: Array.from({ length: lines }, (_, i) => `Artificial thought line ${i + 1}`).join("\n"),
+            const Body = rendered ? MarkdownRenderable : CodeRenderable;
+            border.add(new Body(renderer, { content: Array.from({ length: lines }, (_, i) => `Artificial thought line ${i + 1}`).join(rendered ? "\n\n" : "\n"),
                 syntaxStyle, drawUnstyledText: true, streaming: false }));
         }
     }
     clickable.onMouseUp = () => { if (!showMode) { isExpanded = !isExpanded; toggleCount++; draw(); } };
     draw();
-    const blocks = () => findBlocks(renderer.root, new Set(["msg_fixture"]));
+    const blocks = () => findBlocks(renderer.root, new Set(["msg_fixture"]), undefined, layout);
     const update = (duration = 2000, timer = true, collapse = true) => adapter.update(blocks(), { group: duration, part: duration }, timer, collapse);
     return { ...screen, adapter, scroll, anchor, header: clickable, blocks, update,
         toggleCount: () => toggleCount, expanded: () => isExpanded,
@@ -139,6 +141,39 @@ test("a transcript containing only a session-part row still collapses from its f
     } finally { await s.close(); }
 });
 
+test("2.4+ rendered and source thoughts collapse from the bottom and reopen in both layouts", async () => {
+    for (const rendered of [true, false]) for (const individual of [true, false]) for (const running of [true, false]) {
+        const s = await fixture({ version: "2.4.1", rendered, individual, running, expanded: true, lines: 40 });
+        try {
+            await s.renderOnce();
+            assert.equal(s.blocks().length, 1);
+            s.update(); await s.renderOnce();
+            s.scroll.scrollTo(s.scroll.scrollHeight); await s.renderOnce();
+            assert.match(s.captureCharFrame(), /收起思考/);
+            const [footer] = collapseControls(s.anchor);
+            await s.mockMouse.click(footer.x + 1, footer.y);
+            s.update(); await s.renderOnce();
+            assert.equal(s.toggleCount(), 1);
+            assert.equal(s.expanded(), false);
+            assert.doesNotMatch(s.captureCharFrame(), /收起思考|Artificial thought line/);
+            await s.mockMouse.click(s.header.x + 3, s.header.y);
+            s.update(); await s.renderOnce();
+            assert.equal(s.expanded(), true);
+            assert.equal(collapseControls(s.anchor).length, 1);
+        } finally { await s.close(); }
+    }
+});
+
+test("2.4+ always-show Markdown thoughts have a timer without a collapse control", async () => {
+    const s = await fixture({ version: "2.4.1", rendered: true, expanded: true, individual: true, showMode: true });
+    try {
+        await s.renderOnce();
+        s.update(); await s.renderOnce();
+        assert.match(s.captureCharFrame(), /· 2s/);
+        assert.equal(collapseControls(s.anchor).length, 0);
+    } finally { await s.close(); }
+});
+
 test("native show mode gets a timer without an ineffective collapse button", async () => {
     const s = await fixture({ expanded: true, individual: true, showMode: true });
     try {
@@ -191,6 +226,15 @@ test("narrow layouts preserve the seconds counter", async () => {
 test("all 2.x releases, including prereleases and build metadata, pass the version gate", () => {
     for (const version of ["2.0.0", "2.1.2", "2.1.3", "2.10.0", "v2.1.2", "2.2.0-beta.1", "v2.2.0-dev.1+build.42"])
         assert.ok(supports(version), version);
+});
+
+test("host versions select the legacy layout before 2.4 and Markdown support from 2.4", () => {
+    for (const version of ["2.0.0", "v2.1.2", "2.2.7", "2.3.2", "2.3.99+build.42"])
+        assert.equal(layoutFor(version), "legacy", version);
+    for (const version of ["2.4.0", "2.4.1", "v2.4.0-beta.1", "2.4.1+build.42", "2.10.0"])
+        assert.equal(layoutFor(version), "markdown", version);
+    for (const version of ["1.4.0", "3.0.0", "2.4", "unknown", ""])
+        assert.equal(layoutFor(version), undefined, version);
 });
 
 test("unsupported hosts register status only and never inspect the renderer tree", () => {

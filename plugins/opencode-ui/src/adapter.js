@@ -1,15 +1,27 @@
-import { BoxRenderable, CodeRenderable, MouseEvent, Renderable, ScrollBoxRenderable, TextRenderable, Yoga } from "@opentui/core";
+import { BoxRenderable, CodeRenderable, MarkdownRenderable, MouseEvent, Renderable, ScrollBoxRenderable, TextRenderable, Yoga } from "@opentui/core";
 import { formatDuration } from "./duration.js";
 
 export const supportedRange = "2.x";
 const prefix = "opencode-ui:";
 
-/** @param {string} version */
-export function supports(version) {
-    return /^v?2\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version);
+/** @typedef {"legacy" | "markdown"} Layout */
+
+/** OpenCode 2.4.0 introduced ReasoningBody's native Markdown renderer.
+ * @param {string} version
+ * @returns {Layout | undefined} */
+export function layoutFor(version) {
+    const match = /^v?2\.(\d+)\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
+    if (!match) return;
+    return Number(match[1]) >= 4 ? "markdown" : "legacy";
 }
 
-/** @param {import('@opentui/core').BaseRenderable} node */
+/** @param {string} version */
+export function supports(version) {
+    return layoutFor(version) !== undefined;
+}
+
+/** ScrollBox content can be a facade in newer OpenTUI; only child access is needed.
+ * @param {Pick<import('@opentui/core').BaseRenderable, 'getChildren'>} node */
 function children(node) {
     // Solid's conditional siblings leave invisible LayoutSlotRenderable nodes.
     // They do not contribute to the visible header/body shape.
@@ -25,9 +37,15 @@ function descendants(node) {
     return children(node).flatMap(child => [child, ...descendants(child)]);
 }
 
-/** @param {import('@opentui/core').BaseRenderable} node */
-function hasCode(node) {
-    return descendants(node).some(child => child instanceof CodeRenderable);
+/** @param {import('@opentui/core').BaseRenderable} node
+ * @param {Layout} layout
+ * @returns {boolean} */
+function hasReasoningBody(node, layout) {
+    // OpenTUI 0.9 renders Markdown paragraphs with TextRenderable children;
+    // do not depend on its older internal CodeRenderable implementation.
+    return children(node).some(child => child instanceof CodeRenderable
+        || (layout === "markdown" && child instanceof MarkdownRenderable)
+        || hasReasoningBody(child, layout));
 }
 
 /** @param {import('@opentui/core').BaseRenderable} node
@@ -68,9 +86,10 @@ function clearClock(state) {
  * @param {import('@opentui/core').Renderable} root
  * @param {Set<string>} messageIDs
  * @param {ScrollBoxRenderable} [transcript] Session-owned timeline resolved from the public composer slot.
+ * @param {Layout} [layout] Selected from the host version, including for collapse rechecks.
  * @returns {ThinkingBlock[]}
  */
-export function findBlocks(root, messageIDs, transcript) {
+export function findBlocks(root, messageIDs, transcript, layout = "legacy") {
     /** @type {ThinkingBlock[]} */
     const result = [];
     const scrolls = transcript ? [transcript] : [root, ...descendants(root)].filter(node => node instanceof ScrollBoxRenderable);
@@ -93,7 +112,7 @@ export function findBlocks(root, messageIDs, transcript) {
                 const icon = texts[0]?.plainText;
                 const running = title ? headerText(title).startsWith("Thinking") : false;
                 if (title && title.parent instanceof BoxRenderable && (running || icon === "+" || icon === "-")) {
-                    const expanded = !!body && hasCode(body);
+                    const expanded = !!body && hasReasoningBody(body, layout);
                     if (!body || expanded) {
                         result.push({ anchor: node, header: first, title, clockParent: title.parent, body, scroll, running, expanded, grouped: true });
                         continue;
@@ -110,7 +129,7 @@ export function findBlocks(root, messageIDs, transcript) {
             const title = texts.find(text => /^(?:Thinking(?::|$)|[+-] Thought(?:[: ]|$))/.test(headerText(text)));
             if (!title || !(title.parent instanceof BoxRenderable)) continue;
             const running = headerText(title).startsWith("Thinking");
-            if (body && !hasCode(body)) continue;
+            if (body && !hasReasoningBody(body, layout)) continue;
             result.push({ anchor: node, header: clickable, title, clockParent: title.parent, body, scroll, running, grouped: false,
                 expanded: !!body && (title.plainText.startsWith("- ") || (running
                     && children(body)[0] instanceof BoxRenderable
@@ -122,9 +141,11 @@ export function findBlocks(root, messageIDs, transcript) {
 }
 
 export class ThinkingAdapter {
-    /** @param {import('@opencode/plugin/tui').Plugin.Context} ctx */
-    constructor(ctx) {
+    /** @param {import('@opencode/plugin/tui').Plugin.Context} ctx
+     * @param {Layout} [layout] */
+    constructor(ctx, layout = "legacy") {
         this.ctx = ctx;
+        this.layout = layout;
         /** @type {Map<BoxRenderable, Attachment>} */
         this.attached = new Map();
     }
@@ -197,7 +218,7 @@ export class ThinkingAdapter {
         event.stopPropagation();
         if (event.button !== 0 || event.isDragging || this.ctx.renderer.getSelection()?.getSelectedText() || block.header.isDestroyed) return;
         // Recheck: the host may have collapsed/remounted the block since the last scan.
-        const current = findBlocks(block.scroll, new Set(), block.scroll)
+        const current = findBlocks(block.scroll, new Set(), block.scroll, this.layout)
             .find(item => item.header === block.header);
         if (!current?.expanded) return;
         const offset = block.header.y - block.scroll.viewport.y;

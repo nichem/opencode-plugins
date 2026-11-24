@@ -18,9 +18,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "tsc --noEmit",
+    "check": "node --check scripts/test-ui.mjs && tsc --noEmit",
     "test": "node --test tests/*.test.js",
-    "test:ui": "bun test --conditions=browser --preload @opentui/solid/preload ./tests/thinking.ui.mjs ./tests/native.ui.tsx",
+    "test:ui": "node scripts/test-ui.mjs",
     "check:host": "node scripts/check-host.mjs"
   },
   "peerDependencies": {
