@@ -5,12 +5,20 @@ import { catalog, specifier } from "./catalog.js";
 import { planOperations, writeChanges } from "./config.js";
 import { opencode } from "./status.js";
 
-export async function preparePackages(selected, revision, { run = opencode, env = process.env, report = () => {} } = {}) {
+export async function preparePackages(selected, revision,
+    { run = opencode, env = process.env, report = () => {}, remove = rm, signal } = {}) {
     const ids = [...new Set(selected.map(plugin => plugin.id))];
     if (!/^[a-f0-9]{40}$/.test(revision) || ids.some(id => !catalog.some(plugin => plugin.id === id)))
         throw new Error("无效的插件或提交版本（未修改配置）");
     if (!ids.length) return;
+    const shutdown = new AbortController();
+    const interrupted = () => shutdown.abort();
+    const activeSignal = signal ? AbortSignal.any([signal, shutdown.signal]) : shutdown.signal;
+    const canceled = () => Object.assign(new Error("已取消插件准备；未修改配置。"), { code: "ABORT_ERR" });
+    if (activeSignal.aborted) throw canceled();
     const directory = await mkdtemp(join(tmpdir(), "opencode-plugin-install-"));
+    process.on("SIGINT", interrupted);
+    process.on("SIGTERM", interrupted);
     try {
         const config = join(directory, "config", "opencode");
         await mkdir(config, { recursive: true });
@@ -26,19 +34,36 @@ export async function preparePackages(selected, revision, { run = opencode, env 
             XDG_CACHE_HOME: env.XDG_CACHE_HOME || join(homedir(), ".cache"),
         });
         for (const id of ids) {
+            if (activeSignal.aborted) throw canceled();
             report(`正在下载并准备 ${id}…`);
-            const timer = setInterval(() => report(`仍在准备 ${id}，请稍候…`), 15000).unref();
+            const started = Date.now();
+            const timer = setInterval(() => report(`仍在准备 ${id}（已等待 ${Math.floor((Date.now() - started) / 1000)} 秒，上限 300 秒）…`), 15000).unref();
             try {
-                await run("add", { target: specifier(id, revision), env: isolated, cwd: directory, timeout: 300000 });
+                await run("add", { target: specifier(id, revision), env: isolated, cwd: directory, timeout: 300000, signal: activeSignal });
             } catch (error) {
-                throw new Error(`${id} 下载或安装失败（可能是网络、超时或 OpenCode 安装错误）；未修改配置，请重试。`, { cause: error });
+                if (error.terminationFailed) report("安装子进程未能完整终止，请检查遗留的 plugin add 进程；不要结束正常使用中的 OpenCode。");
+                const detail = error.code === "ETIMEDOUT" ? "准备超时（300 秒），请检查网络、代理或插件缓存锁后重试"
+                    : error.code === "ABORT_ERR" ? "准备已取消"
+                    : Number.isInteger(error.code) ? `下载或安装失败（OpenCode 退出码 ${error.code}）`
+                    : "下载或安装失败，请检查网络和 OpenCode 后重试";
+                throw Object.assign(new Error(`${id} ${detail}；未修改配置。`, { cause: error }), { code: error.code });
             } finally { clearInterval(timer); }
             report(`✓ ${id}：插件包已准备好`);
         }
     } finally {
-        if (!resolve(directory).startsWith(resolve(tmpdir()) + sep)) throw new Error("无效的临时目录");
-        await rm(directory, { recursive: true, force: true });
+        try {
+            if (!resolve(directory).startsWith(resolve(tmpdir()) + sep)) throw new Error("无效的临时目录");
+            await remove(directory, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 });
+        } catch {
+            // Cleanup is secondary: never hide the download error or turn a
+            // successful preparation into a failed installation.
+            report(`临时目录清理失败，已保留：${directory}；请在占用进程退出后清理。`);
+        } finally {
+            process.off("SIGINT", interrupted);
+            process.off("SIGTERM", interrupted);
+        }
     }
+    if (activeSignal.aborted) throw canceled();
 }
 
 export function applySelection(configs, selected, action, revision, backupRoot, options) {

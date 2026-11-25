@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { catalog, identify, pluginPath, repo } from "./catalog.js";
 import { nativeReplacement, supportedVersion } from "./policy.js";
+import { runProcess } from "./process.js";
 const exec = promisify(execFile);
 export async function opencode(command, { target, env, cwd, signal, timeout = 60000 } = {}) {
     const commands = { version: ["--version"], list: ["plugin", "list"], reload: ["reload"] };
@@ -16,8 +17,8 @@ export async function opencode(command, { target, env, cwd, signal, timeout = 60
     const options = { windowsHide: true, timeout, maxBuffer: 2 * 1024 * 1024, env, cwd, signal };
     // Dynamic arguments are restricted to our canonical URL and a hexadecimal SHA.
     return process.platform === "win32"
-        ? exec(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `opencode ${args.join(" ")}`], options)
-        : exec("opencode", args, options);
+        ? runProcess(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `opencode ${args.join(" ")}`], options)
+        : runProcess("opencode", args, options);
 }
 export async function latestRevision({ signal } = {}) {
     const { stdout } = await exec("git", ["ls-remote", repo, "refs/heads/main"], { windowsHide: true, timeout: 30000, signal });

@@ -50,7 +50,11 @@ async function main() {
                 backup = await applyOperations(configs, operations, latest,
                     join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "opencode-plugins", "backups"),
                     { report: message => console.log(message) });
-            } catch (error) { console.log(error.message); updates.refresh(); continue; }
+            } catch (error) {
+                console.log(error.message);
+                if (error.code === "ABORT_ERR") return;
+                updates.refresh(); continue;
+            }
             for (const { plugin, action } of operations) console.log(`✓ ${plugin.id}：${actionLabels[action]}完成`);
             if (backup) console.log(`原配置备份：${backup}（保留最近 ${BACKUP_LIMIT} 次）`);
             try { await opencode("reload"); console.log("OpenCode 配置已重新加载。"); }

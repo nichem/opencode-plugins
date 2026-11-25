@@ -166,3 +166,70 @@ test("empty operations never prepare or write, and conflicting operations are re
     const old = catalog.find(plugin => plugin.id === "opencode-websearch"), replacement = catalog.find(plugin => plugin.id === "opencode-deepseek-skills");
     assert.throws(() => planOperations([], [{ plugin: old, action: "remove" }, { plugin: replacement, action: "migrate" }], revision), /冲突/);
 });
+
+test("busy cleanup keeps the original timeout error and never writes configuration", async t => {
+    let directory;
+    const messages = [], before = process.listenerCount("SIGINT");
+    t.after(async () => {
+        assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
+        await rm(directory, { recursive: true, force: true });
+    });
+    await assert.rejects(applySelection([], selected, "install", revision, "/unused", {
+        prepare: (plugins, ref) => preparePackages(plugins, ref, {
+            report: message => messages.push(message),
+            run: async (_command, options) => {
+                directory = options.cwd;
+                throw Object.assign(new Error("private fixture diagnostics"), { code: "ETIMEDOUT" });
+            },
+            remove: async (_path, options) => {
+                assert.equal(options.maxRetries, 4);
+                throw Object.assign(new Error("EBUSY fixture"), { code: "EBUSY" });
+            },
+        }),
+        write: () => assert.fail("timeout must not apply removals or configuration changes"),
+    }), error => error.code === "ETIMEDOUT" && /超时（300 秒）/.test(error.message) && /未修改配置/.test(error.message)
+        && !/EBUSY|private fixture/.test(error.message));
+    assert.ok(messages.some(message => /临时目录清理失败/.test(message)));
+    assert.equal(process.listenerCount("SIGINT"), before);
+});
+
+test("successful preparation remains successful if temporary cleanup fails", async t => {
+    let directory;
+    const messages = [];
+    t.after(async () => {
+        assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
+        await rm(directory, { recursive: true, force: true });
+    });
+    await preparePackages([selected[0]], revision, {
+        run: async (_command, options) => { directory = options.cwd; },
+        remove: async () => { throw Object.assign(new Error("locked"), { code: "EBUSY" }); },
+        report: message => messages.push(message),
+    });
+    assert.ok(messages.some(message => /插件包已准备好/.test(message)));
+    assert.ok(messages.some(message => /临时目录清理失败/.test(message)));
+});
+
+test("Ctrl+C during preparation aborts the owned command and restores signal handlers", async () => {
+    const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
+    let directory;
+    await assert.rejects(preparePackages(selected, revision, { run: async (_command, options) => {
+        directory = options.cwd;
+        assert.equal(options.signal.aborted, false);
+        process.emit("SIGINT");
+        assert.equal(options.signal.aborted, true);
+        throw Object.assign(new Error("fixture interrupted"), { code: "ABORT_ERR" });
+    } }), error => error.code === "ABORT_ERR" && /已取消/.test(error.message));
+    await assert.rejects(access(directory), { code: "ENOENT" });
+    assert.deepEqual([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")], before);
+});
+
+test("cancellation during cleanup still prevents configuration writes", async () => {
+    const controller = new AbortController();
+    await assert.rejects(applySelection([], selected, "install", revision, "/unused", {
+        prepare: (plugins, ref) => preparePackages(plugins, ref, {
+            signal: controller.signal, run: async () => {},
+            remove: async (path, options) => { await rm(path, options); controller.abort(); },
+        }),
+        write: () => assert.fail("canceled preparation must not commit"),
+    }), { code: "ABORT_ERR" });
+});
