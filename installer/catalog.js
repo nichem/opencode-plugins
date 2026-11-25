@@ -5,7 +5,8 @@ export const catalog = [
     { id: "opencode-message-delete", title: "删除末尾 AI 消息", targets: ["tui"] },
     { id: "opencode-agents", title: "内置 Markdown agent", targets: ["server"] },
     { id: "opencode-quota", title: "当前供应商额度侧栏", targets: ["server", "tui"] },
-    { id: "opencode-websearch", title: "搜索供应商选择 / DeepSeek Search", targets: ["server", "tui"] },
+    { id: "opencode-websearch", title: "搜索供应商选择 / DeepSeek Search", targets: ["server", "tui"], replacedBy: "opencode-deepseek-skills" },
+    { id: "opencode-deepseek-skills", title: "DeepSeek 技能：Search / Fetch / OCR / ASR / TTS", targets: ["server", "tui"], replaces: ["opencode-websearch"], minimumVersion: "2.4.1" },
     { id: "opencode-ui", title: "UI 优化：思考实时计时 / 末尾收起", targets: ["tui"] },
     { id: "opencode-deepseek-behavior", title: "DeepSeek 行为增强与持久化开关", targets: ["server", "tui"] },
 ];

@@ -34,7 +34,7 @@ test("a fresh 2.2.1 install shows native Goal as disabled and never offers it fo
     assert.match(choice.disabled, /原生 \/goal/);
     assert.ok(choices.every(item => !item.checked));
     assert.deepEqual(pluginChoices(items, "remove"), []);
-    for (const item of choices.filter(item => item.value.id !== goal.id)) assert.equal(item.disabled, false);
+    for (const item of choices.filter(item => item.value.id !== goal.id && !item.value.minimumVersion)) assert.equal(item.disabled, false);
 });
 
 test("installed and partially configured retired Goal remains removable even without a known remote version", () => {

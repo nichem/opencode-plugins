@@ -1,5 +1,7 @@
 # OpenCode 搜索供应商选择器
 
+> 此插件已由 [opencode-deepseek-skills](../opencode-deepseek-skills/README.md) 接替。安装器仅显示新插件，已安装用户选择 `websearch → deepseek-skills` 即可一次完成迁移，复用 `dss` 账号和凭据。新插件要求 OpenCode 2.4.1+，以默认关闭的会话技能提供 Search、Fetch、OCR、ASR、TTS，不提供旧 `/search` 弹窗。下文保留旧版行为说明。
+
 面向 **OpenCode 2.1.0** 的独立插件，提供 `/search` 单选弹窗，以及 DeepSeek 官方 Search API 供应商 **DSS**（ID：`dss`）。
 
 ## 使用

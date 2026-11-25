@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { catalog, identify, pluginPath, repo } from "./catalog.js";
-import { nativeReplacement } from "./policy.js";
+import { nativeReplacement, supportedVersion } from "./policy.js";
 const exec = promisify(execFile);
 export async function opencode(command, { target, env, cwd, signal, timeout = 60000 } = {}) {
     const commands = { version: ["--version"], list: ["plugin", "list"], reload: ["reload"] };
@@ -179,7 +179,7 @@ export async function gitRevisionTrees(revisions, { run = exec, sources = new Ma
 export async function loadVersionTrees(configs, latest, installed = "", readTrees = revisionTrees,
     { readGitTrees = gitRevisionTrees, report = () => {}, hostVersion, signal } = {}) {
     const versions = installedVersions(installed);
-    const supported = catalog.filter(plugin => !nativeReplacement(plugin, hostVersion));
+    const supported = catalog.filter(plugin => !plugin.replacedBy && !nativeReplacement(plugin, hostVersion));
     const revisions = new Set(supported.flatMap(p => configuredInstallations(configs, p.id, versions)).map(item => item.revision).filter(Boolean));
     if (![...revisions].some(ref => ref !== latest)) return new Map();
     revisions.add(latest);
@@ -216,6 +216,10 @@ export function statuses(configs, latest, installed = "", trees = new Map(), { h
     const versions = installedVersions(installed);
     return catalog.map(plugin => {
         const present = configs.filter(c => (c.data.plugins ?? []).some(e => identify(e)?.id === plugin.id));
+        const migrating = configs.some(c => (c.data.plugins ?? []).some(e => plugin.replaces?.includes(identify(e)?.id)));
+        plugin = { ...plugin, ...(migrating ? { migrating: true } : {}),
+            ...(plugin.minimumVersion && !supportedVersion(plugin, hostVersion) ? { unsupported: true } : {}) };
+        if (migrating) return { ...plugin, state: "repair", label: "websearch → deepseek-skills · 可升级（移除旧插件）" };
         const replacement = nativeReplacement(plugin, hostVersion);
         if (replacement) return { ...plugin, replacement, state: present.length ? "retired" : "absent",
             label: present.length ? "已原生内置 · 建议卸载旧插件" : "已原生内置 · 无需安装" };

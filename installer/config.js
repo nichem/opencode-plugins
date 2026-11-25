@@ -73,6 +73,9 @@ function removeArrayEntry(text, index) {
 }
 
 export function planChanges(configs, selected, action, revision) {
+    const retiringSearch = selected.some(plugin => [plugin.id, ...(plugin.replaces ?? [])].includes("opencode-websearch"))
+        && configs.some(c => (c.data.plugins ?? []).some(e => identify(e)?.id === "opencode-websearch"))
+        && (action === "remove" || selected.some(plugin => plugin.replaces?.includes("opencode-websearch")));
     return configs.map(config => {
         let entries = [...(config.data.plugins ?? [])];
         let next = config.original ?? "{}\n";
@@ -87,11 +90,12 @@ export function planChanges(configs, selected, action, revision) {
             } else edit(path, after);
         };
         for (const plugin of selected) {
-            const positions = entries.flatMap((entry, index) => identify(entry)?.id === plugin.id ? [index] : []);
+            const family = [plugin.id, ...(plugin.replaces ?? [])];
+            const positions = entries.flatMap((entry, index) => family.includes(identify(entry)?.id) ? [index] : []);
             const matches = positions.map(index => entries[index]);
             const peers = configs.filter(c => c.kind === config.kind);
             // Update every existing occurrence; only create a new entry in one file.
-            const exists = peers.some(c => (c.data.plugins ?? []).some(e => identify(e)?.id === plugin.id));
+            const exists = peers.some(c => (c.data.plugins ?? []).some(e => family.includes(identify(e)?.id)));
             const destination = peers.find(c => c.original !== null) ?? peers[0];
             const install = action !== "remove" && plugin.targets.includes(config.kind)
                 && (matches.length || (!exists && destination === config));
@@ -111,10 +115,14 @@ export function planChanges(configs, selected, action, revision) {
                 entries.splice(index, 1);
             }
         }
-        if (isDeepStrictEqual(entries, config.data.plugins ?? [])) return { ...config, next: config.original };
+        const resetSearch = retiringSearch && config.kind === "server" && config.data.websearch?.provider === "dss";
+        if (resetSearch) edit(["websearch", "provider"], "random");
+        if (!resetSearch && isDeepStrictEqual(entries, config.data.plugins ?? [])) return { ...config, next: config.original };
         const errors = [];
         const data = parse(next, errors, { allowTrailingComma: true });
-        if (errors.length || !isDeepStrictEqual(data, { ...parse(config.original ?? "{}"), plugins: entries }))
+        const expected = { ...parse(config.original ?? "{}"), ...(entries.length || config.data.plugins ? { plugins: entries } : {}) };
+        if (resetSearch) expected.websearch = { ...expected.websearch, provider: "random" };
+        if (errors.length || !isDeepStrictEqual(data, expected))
             throw new Error(`生成的配置校验失败：${config.path}（未修改配置）`);
         return { ...config, next };
     }).filter(c => c.next !== c.original);

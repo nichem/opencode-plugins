@@ -1,8 +1,8 @@
 # OpenCode Plugins
 
-个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、兼容旧版目标管理、逐条删除末尾 AI 消息、显示当前供应商额度、选择网络搜索供应商、优化思考区块的计时和收起操作，以及为 DeepSeek 注入协作行为提示词。
+个人维护的 **OpenCode 2.x 插件集合**：连接模型供应商、加载预设 agent、兼容旧版目标管理、逐条删除末尾 AI 消息、显示当前供应商额度、提供 DeepSeek 搜索与文档音频技能、优化思考区块的计时和收起操作，以及为 DeepSeek 注入协作行为提示词。
 
-原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和搜索选择器针对 **OpenCode 2.1.0** 适配，UI 优化允许 **OpenCode 2.x** 启用，渲染适配基于 **2.1.2** 验证；DeepSeek 行为增强基于 **2.2.0** 验证。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
+原有插件针对 **OpenCode 2.0.27** 验证，额度侧栏和旧搜索选择器针对 **OpenCode 2.1.0** 适配，UI 优化允许 **OpenCode 2.x** 启用，渲染适配基于 **2.1.2** 验证；DeepSeek 行为增强基于 **2.2.0** 验证，DeepSeek 技能要求 **2.4.1+**，已使用本机 **2.4.1** 隔离验证。各插件独立安装，按需选择；详细配置、迁移差异和验证方法见对应目录。
 
 **OpenCode 2.2.1 起已原生内置 `/goal`。** 新版安装器不再提供 Goal 插件的安装 / 更新，但保留新旧地址识别与卸载入口；OpenCode 旧版本仍可安装。已有用户请按下文迁移到原生 Goal。
 
@@ -15,7 +15,7 @@
 | [opencode-message-delete](./plugins/opencode-message-delete/README.md) | 每次删除末尾一条 AI 消息，保留项目文件 | `/delete-last-message` | `cli.json` |
 | [opencode-agents](./plugins/opencode-agents/README.md) | 从插件自带 Markdown 注册 agent | agent 选择器 | `opencode.json` |
 | [opencode-quota](./plugins/opencode-quota/README.md) | 当前供应商额度，内置 Go、DeepSeek、智谱 / Z.AI Coding Plan、Kimi For Coding，支持自定义 JS | 右侧栏、`/quota-refresh` | `opencode.json` + `cli.json` |
-| [opencode-websearch](./plugins/opencode-websearch/README.md) | 搜索供应商单选、会话内选择及 DeepSeek Search（DSS） | `/search` | `opencode.json` + `cli.json` |
+| [opencode-deepseek-skills](./plugins/opencode-deepseek-skills/README.md) | Search / Fetch / OCR / ASR / TTS 技能，默认隐藏，按会话开启；从旧 websearch 升级并复用 DSS 凭据 | `/deepseek-skills` | `opencode.json` + `cli.json` |
 | [opencode-ui](./plugins/opencode-ui/README.md) | 思考中实时计时、展开内容末尾一键收起 | 思考标题与末尾、`/ui-enhance-status` | `cli.json` |
 | [opencode-deepseek-behavior](./plugins/opencode-deepseek-behavior/README.md) | DeepSeek 进度沟通、讨论边界与提交授权提示词，默认开启并持久化 | 右侧点击开关、`/deepseek-behavior` | `opencode.json` + `cli.json` |
 
@@ -37,15 +37,19 @@ npx github:nichem/opencode-plugins
 - **卸载**：多选已配置的插件，再确认卸载；确认默认选择否。仅移除配置，保留账号、凭据、缓存和插件数据。
 - **返回 / 退出**：子菜单按 `Esc` 返回，主菜单选择退出，或按 `Ctrl+C`。
 
+DeepSeek 技能统一显示为 `opencode-deepseek-skills`。检测到旧 `opencode-websearch`（含历史根目录地址）时，标注 `websearch → deepseek-skills`，选择后作为一次升级移除旧插件并安装新插件；两者都已配置时也可完成迁移。旧 websearch 不再单独显示。OpenCode 低于 2.4.1 或版本未知时禁止安装此新插件，但仍可通过统一入口卸载新旧配置。
+
+升级先准备新插件，再备份和修改两个入口；保留 DSS 连接、账号、凭据及插件数据。安装器所管理服务端配置中的 `websearch.provider = dss` 会改为 `random`，其他供应商选择保留。项目及上级目录的配置不在安装器管理范围内，若曾单独指定 `dss`，请改为 `random` 或其他可用供应商。新插件不提供旧 `/search` 弹窗。
+
 安装器启动后即在后台并行准备 GitHub 版本、本机安装状态和目录版本数据，主菜单照常显示。进入“安装 / 更新”时复用已准备的结果；若网络检查尚未完成，仍需等待剩余部分。结果在本次运行中最多复用 60 秒，配置变化、安装 / 卸载后重新检查，失败的检查在下次进入时重试。
 
-安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal、额度侧栏、搜索选择器和 DeepSeek 行为增强自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
+安装器管理本仓库 GitHub 地址对应的全局 `plugins` 条目，保留其他配置和插件选项；Goal、额度侧栏、DeepSeek 技能和 DeepSeek 行为增强自动同时处理服务端与终端界面入口。不会读取 agent 文档，也不会修改项目目录的配置或替换其他来源的同名插件。
 
 插件统一放在 `plugins/` 下，根目录保留安装器和仓库文档。安装器同时识别历史根目录地址与新地址：旧地址会显示“需要迁移”，选择安装 / 更新即可替换为新路径，无需先卸载。新旧地址混杂时会去重并保留选项；重复选项值冲突时停止写入并提示手动合并，避免丢失设置。卸载会同时移除该插件的新旧地址配置。
 
 版本按各插件整个目录的 Git tree hash 判断：比较已安装提交中实际安装路径与 `main` 最新提交中 `plugins/<插件目录>` 的内容。内容相同且使用新地址才显示最新版；仅搬目录时显示需要迁移，不误报内容更新。其他插件、根目录文档或安装器的修改不会触发该插件的更新提示；插件目录内的文档和测试变化仍算更新，改动撤销后内容相同也不会提示更新。安装时仍固定到本次检查的完整提交 SHA；后续更新请重新运行上面的命令。
 
-安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的新旧目录、不同分支、标签或地址写法不会互借版本。Goal、额度侧栏、搜索选择器和 DeepSeek 行为增强均分别比较两个入口，全部一致才显示最新版。优先通过 GitHub API 查询提交元数据，以及根目录和 `plugins/` 两层非递归 tree；不进入单个插件目录。API 限流或请求失败时显示原因，并自动改用 Git 查询，不需要 GitHub 凭据。
+安装器从配置或 OpenCode 缓存确定已安装提交，缓存按完整安装地址分别匹配；同一插件的新旧目录、不同分支、标签或地址写法不会互借版本。Goal、额度侧栏、DeepSeek 技能和 DeepSeek 行为增强均分别比较两个入口，全部一致才显示最新版。优先通过 GitHub API 查询提交元数据，以及根目录和 `plugins/` 两层非递归 tree；不进入单个插件目录。API 限流或请求失败时显示原因，并自动改用 Git 查询，不需要 GitHub 凭据。旧 websearch 的跨插件迁移只检查配置存在性，不查询其旧提交内容，也不将其版本视为新插件的版本。
 
 已被当前 OpenCode 版本原生替代的插件不再查询旧安装提交或提示更新；其他插件仍按上述目录内容比较。退役只改变安装器的选择，不会自动修改用户配置或删除旧目标数据。
 
@@ -67,7 +71,7 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 
 ### 服务端：`opencode.json`
 
-负责供应商接入、预设 agent、额度查询、搜索选择和 DeepSeek 行为提示词；使用 `opencode.jsonc` 也可以，无需同时维护两份。以下示例面向 OpenCode 2.2.1+，不包含已被原生替代的 Goal 插件。
+负责供应商接入、预设 agent、额度查询、DeepSeek 技能和行为提示词；使用 `opencode.jsonc` 也可以，无需同时维护两份。以下示例面向 OpenCode 2.4.1+，不包含已被原生替代的 Goal 插件。
 
 ```json
 {
@@ -75,7 +79,7 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-providers",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-agents",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-websearch",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-deepseek-skills",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-deepseek-behavior"
   ]
 }
@@ -83,7 +87,7 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
 
 ### 终端界面：`cli.json`
 
-负责删除消息命令、额度侧栏、搜索选择弹窗、思考 UI 优化和 DeepSeek 行为增强开关。新版原生 Goal 的状态界面无需另装插件。
+负责删除消息命令、额度侧栏、DeepSeek 技能会话开关、思考 UI 优化和 DeepSeek 行为增强开关。新版原生 Goal 的状态界面无需另装插件。
 
 ```json
 {
@@ -91,14 +95,14 @@ Git 回退在临时裸仓库中使用 `tree:0` 过滤，先取提交元数据，
   "plugins": [
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-message-delete",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-quota",
-    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-websearch",
+    "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-deepseek-skills",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-ui",
     "git+https://github.com/nichem/opencode-plugins.git#main::path:plugins/opencode-deepseek-behavior"
   ]
 }
 ```
 
-额度侧栏、搜索选择器和 DeepSeek 行为增强在两个文件中使用各自相同的地址，分别加载服务端和界面入口。OpenCode < 2.2.1 使用旧 Goal 插件时，也需要同时配置两个入口；安装方法见 [旧版 Goal 文档](./plugins/opencode-goal/README.md)。
+额度侧栏、DeepSeek 技能和 DeepSeek 行为增强在两个文件中使用各自相同的地址，分别加载服务端和界面入口。OpenCode < 2.2.1 使用旧 Goal 插件时，也需要同时配置两个入口；安装方法见 [旧版 Goal 文档](./plugins/opencode-goal/README.md)。
 
 配置完成后执行 `opencode reload`，并重新打开终端界面。
 
@@ -173,15 +177,13 @@ OpenCode 旧版本可继续使用本仓库基于 `mirsella/opencode-goal 0.4.3` 
 
 `a106134` 版本若出现 `NpmInstallFailedError`，同样需要更新额度插件；已调整开发构建命令，避免 Git 安装触发预构建。
 
-### 网络搜索供应商
+### DeepSeek 会话技能
 
-执行 `/search` 打开紧凑的单行列表；无已有设置时默认 `random`，动态列出全部已注册的搜索供应商。整行高亮当前选项，勾号标识已生效的选择。按 Enter 保存当前项目默认，按 `s` 仅当前会话生效；首页或高亮 `random` 时隐藏 `s`。
+执行 `/deepseek-skills` 切换当前会话的 Search、Fetch、OCR、ASR、TTS 技能。默认隐藏且不可调用，开启后模型按需加载对应 `SKILL.md` 再执行独立 API；不经过原生 `websearch` 供应商机制。凭据沿用 `/connect` 中 ID 为 `dss` 的当前激活账号，旧 DSS 用户升级无需重新输入 Key。
 
-会话中按实际会话目录定位配置，Enter 仅更新该目录的 `websearch.provider`，遵循 `.opencode` 的配置优先级，写入前备份并检查并发修改，保存后刷新并核验生效结果；`s` 只保存会话设置。继承的全局或上级禁用设置同样会隐藏 `s`。
+首页执行命令会先创建空会话、保存开启状态再进入，不请求模型，首轮即可使用技能。会话内执行只影响该会话；状态持久保存，其他会话、新会话和子会话默认关闭。关闭后拒绝后续调用，已有历史内容保留。
 
-新增 DSS（DeepSeek Search），通过 `/connect` 中独立的 **DSS (DeepSeek Search)** 入口保存搜索 API Key，调用官方新上线的 Search API。DSS 与 DeepSeek 模型连接分别管理；升级后需要在 DSS 入口单独连接。未连接时保留显示并标记为不可用。搜索保留原生供应商字段和权限检查。完整行为及验证说明见 [搜索选择器文档](./plugins/opencode-websearch/README.md)。
-
-弹窗兼容其他供应商插件的先后加载顺序，显示最终默认值。DSS 查询超过 128 个 Unicode 字符时，向模型返回明确限制，供模型缩短后重试。
+由于 OpenCode 2.4.1 原生 `/skills` 列表按项目共享，本插件通过会话内专用加载入口提供五份技能，不注册到共享列表。加载、API 调用和文件读写遵循宿主权限；TTS 输出为新音频文件。具体限制、迁移及验证方法见 [DeepSeek 技能说明](./plugins/opencode-deepseek-skills/README.md)。旧版选择器保留源代码和[历史文档](./plugins/opencode-websearch/README.md)，安装器统一提供升级入口。
 
 ### 思考 UI 优化
 

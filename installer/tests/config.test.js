@@ -90,7 +90,8 @@ test("status distinguishes latest, update, absent, incomplete and failed checks"
         [older, new Map([["plugins/opencode-message-delete", "old"]])],
     ]);
     const state = statuses(cfg, revision, `opencode-providers ${revision.slice(0,7)} ${specifier("opencode-providers", "main")}`, trees);
-    assert.deepEqual(state.map(p => p.state), ["current", "repair", "update", "absent", "absent", "absent", "absent", "absent"]);
+    assert.deepEqual(state.slice(0, 3).map(p => p.state), ["current", "repair", "update"]);
+    assert.ok(state.slice(3).every(p => p.state === "absent"));
     assert.equal(statuses(cfg, undefined)[0].state, "unknown");
     assert.equal(statuses(cfg, revision)[0].state, "repair");
 });

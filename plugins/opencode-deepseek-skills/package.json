@@ -1,0 +1,35 @@
+{
+  "name": "opencode-deepseek-skills",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Session-enabled DeepSeek Search, Fetch, OCR, ASR and TTS skills for OpenCode 2.4.1+",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./tui": "./tui.js"
+  },
+  "files": [
+    "index.js",
+    "tui.js",
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check:smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.4.1",
+    "effect": "4.1.0"
+  },
+  "devDependencies": {
+    "@opencode/client": "2.4.1"
+  }
+}

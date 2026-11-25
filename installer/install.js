@@ -44,6 +44,7 @@ export async function preparePackages(selected, revision, { run = opencode, env 
 export async function applySelection(configs, selected, action, revision, backupRoot,
     { prepare = preparePackages, write = writeChanges, report = () => {} } = {}) {
     const changes = planChanges(configs, selected, action, revision);
+    if (selected.some(plugin => plugin.migrating)) report("websearch → deepseek-skills：复用 DSS 凭据，移除旧服务端和终端入口；项目配置若单独指定 dss，请改为 random。");
     if (action === "install") await prepare(selected, revision, { report });
     return write(changes, backupRoot, { warn: report });
 }
