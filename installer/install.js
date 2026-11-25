@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { catalog, specifier } from "./catalog.js";
-import { planChanges, writeChanges } from "./config.js";
+import { planOperations, writeChanges } from "./config.js";
 import { opencode } from "./status.js";
 
 export async function preparePackages(selected, revision, { run = opencode, env = process.env, report = () => {} } = {}) {
@@ -41,10 +41,15 @@ export async function preparePackages(selected, revision, { run = opencode, env 
     }
 }
 
-export async function applySelection(configs, selected, action, revision, backupRoot,
+export function applySelection(configs, selected, action, revision, backupRoot, options) {
+    return applyOperations(configs, selected.map(plugin => ({ plugin, action })), revision, backupRoot, options);
+}
+
+export async function applyOperations(configs, operations, revision, backupRoot,
     { prepare = preparePackages, write = writeChanges, report = () => {} } = {}) {
-    const changes = planChanges(configs, selected, action, revision);
-    if (selected.some(plugin => plugin.migrating)) report("websearch → deepseek-skills：复用 DSS 凭据，移除旧服务端和终端入口；项目配置若单独指定 dss，请改为 random。");
-    if (action === "install") await prepare(selected, revision, { report });
+    if (!operations.length) return;
+    const changes = planOperations(configs, operations, revision);
+    const selected = operations.filter(operation => operation.action !== "remove").map(operation => operation.plugin);
+    if (selected.length) await prepare(selected, revision, { report });
     return write(changes, backupRoot, { warn: report });
 }

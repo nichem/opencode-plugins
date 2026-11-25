@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parse } from "jsonc-parser";
 import { catalog, specifier, identify, repo } from "../catalog.js";
 import { statuses, loadVersionTrees } from "../status.js";
-import { pluginChoices } from "../policy.js";
+import { createSelection, toggleChecked, toggleUpdate, selectedOperations, selectionLabel } from "../selection.js";
 import { planChanges } from "../config.js";
 import { applySelection } from "../install.js";
 
@@ -18,14 +18,17 @@ test("installer exposes a single skills entry for fresh, legacy, mixed and curre
     for (const entries of [[], [specifier(old, sha)], [specifier(id, sha)], [specifier(old, sha), specifier(id, sha)]]) {
         const configs = [cfg("server", entries), cfg("tui", entries)];
         const items = statuses(configs, sha, "", new Map(), { hostVersion: "2.4.1" });
-        const choices = pluginChoices(items, "install");
-        assert.equal(choices.filter(p => p.value.id === id).length, 1);
-        assert.equal(choices.some(p => p.value.id === old), false);
-        const item = choices.find(p => p.value.id === id);
-        if (entries.includes(specifier(old, sha))) { assert.match(item.name, /websearch → deepseek-skills/); assert.equal(item.disabled, false); }
-        else if (entries.length) assert.equal(item.disabled, "已是最新");
-        const removals = pluginChoices(items, "remove").filter(p => [old, id].includes(p.value.id));
-        assert.equal(removals.length, entries.length ? 1 : 0);
+        const choices = createSelection(items, sha);
+        assert.equal(choices.filter(p => p.plugin.id === id).length, 1);
+        assert.equal(choices.some(p => p.plugin.id === old), false);
+        assert.deepEqual(selectedOperations(choices), [], "opening the list never migrates or installs anything");
+        const item = choices.find(p => p.plugin.id === id);
+        assert.equal(item.checked, Boolean(entries.length));
+        if (entries.includes(specifier(old, sha))) {
+            assert.match(selectionLabel(item), /websearch → deepseek-skills/);
+            assert.equal(selectedOperations([toggleUpdate(item)])[0].action, "migrate");
+        } else if (entries.length) assert.equal(toggleUpdate(item), item);
+        if (entries.length) assert.equal(selectedOperations([toggleChecked(item)])[0].action, "remove");
     }
 });
 
@@ -71,7 +74,9 @@ test("legacy revisions need no tree queries and unsupported hosts retain an unin
     assert.deepEqual(refs, []);
     for (const version of ["2.2.1", "2.4.0", "2.4.1-rc.1", undefined]) {
         const items = statuses(configs, sha, "", new Map(), { hostVersion: version });
-        assert.match(pluginChoices(items, "install").find(p => p.value.id === id).disabled, /2.4.1/);
-        assert.equal(pluginChoices(items, "remove").find(p => p.value.id === id).disabled, false);
+        const row = createSelection(items, sha).find(p => p.plugin.id === id);
+        assert.match(row.blocked, /2.4.1/);
+        assert.equal(toggleUpdate(row), row);
+        assert.equal(selectedOperations([toggleChecked(row)])[0].action, "remove");
     }
 });

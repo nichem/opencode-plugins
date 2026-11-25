@@ -8,7 +8,7 @@
 npx github:nichem/opencode-plugins
 ```
 
-选择 `opencode-deepseek-skills`。检测到本仓库旧 `opencode-websearch` 时，列表显示 `websearch → deepseek-skills`；同一次升级先准备新插件，再备份并替换旧服务端和终端入口。已同时安装两者时也通过此项完成迁移。卸载页只有这个统一入口，会移除新旧插件配置，保留账号、凭据和插件数据。
+在“管理插件”中勾选 `opencode-deepseek-skills`，回车预览并确认安装（默认否）。检测到本仓库旧 `opencode-websearch` 时，列表显示 `websearch → deepseek-skills`，默认勾选并保持现状；按 `u` 标记迁移，再回车确认，先准备新插件，再备份并替换旧服务端和终端入口。已同时安装两者时也通过此项完成迁移。取消勾选该统一入口并确认，会卸载新旧插件配置，保留账号、凭据和插件数据。
 
 安装器管理的服务端配置中，旧 `websearch.provider = dss` 会改为 `random`，其他供应商选择不变。安装器不会扫描项目配置；项目或上级目录单独设置了 `dss` 时，请改为 `random` 或其他仍可用的原生供应商。旧 `/search` 选择器不再由新插件提供。
 

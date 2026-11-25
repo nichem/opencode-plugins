@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { select, checkbox, confirm } from "@inquirer/prompts";
+import { select, confirm } from "@inquirer/prompts";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readConfigs } from "../installer/config.js";
 import { statuses, opencode } from "../installer/status.js";
-import { pluginChoices } from "../installer/policy.js";
-import { applySelection } from "../installer/install.js";
+import { createSelection, reviewOperations, actionLabels } from "../installer/selection.js";
+import { managePlugins } from "../installer/manage-prompt.js";
+import { applyOperations } from "../installer/install.js";
 import { createUpdateCheck } from "../installer/updates.js";
 import { BACKUP_LIMIT } from "../installer/backups.js";
 
@@ -20,48 +21,41 @@ async function submenu(prompt, options, fallback) {
 
 async function main() {
     if (process.argv.includes("--help")) {
-        console.log("OpenCode 插件安装器\n用法：npx github:nichem/opencode-plugins\n安装/更新与卸载均支持多选。只管理本集合的全局配置，不读取 agent 文档。\n要求：Node.js 24+、Git、OpenCode 2.x。退出：Ctrl+C。");
+        console.log("OpenCode 插件安装器\n用法：npx github:nichem/opencode-plugins\n统一管理插件：空格安装/卸载，u 标记更新/修复/迁移，回车预览并确认（默认否）。\n已安装默认勾选，保持勾选不自动更新。只管理本集合的全局配置，不读取 agent 文档。\n要求：Node.js 24+、Git、OpenCode 2.x。退出：Ctrl+C。");
         return;
     }
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("请在交互式终端运行；查看用法请加 --help。");
     let version;
     try { version = (await opencode("version")).stdout.trim(); } catch { throw new Error("找不到 OpenCode，请先安装 OpenCode 2.x 并加入 PATH。"); }
     if (!/^(?:opencode\s+)?v?2\./i.test(version)) throw new Error(`此安装器要求 OpenCode 2.x，当前版本：${version}`);
-    console.log("OpenCode 插件集合 · GitHub 安装\n空格多选，回车确认，Ctrl+C 退出。最新版在安装页不可选。\n正在后台准备版本和安装状态…\n");
+    console.log("OpenCode 插件集合 · GitHub 安装\n空格安装/卸载，u 标记更新/修复/迁移，回车预览后确认。\n正在后台准备版本和安装状态…\n");
     const updates = createUpdateCheck(version);
     try {
         for (;;) {
             const action = await select({ message: "你想做什么？", choices: [
-                { name: "安装 / 更新", value: "install" }, { name: "卸载", value: "remove" }, { name: "退出", value: "exit" },
+                { name: "管理插件（安装 / 更新 / 卸载）", value: "manage" }, { name: "退出", value: "exit" },
             ] });
             if (action === "exit") return;
             const configs = await readConfigs();
-            let latest, installed = "", trees = new Map();
-            if (action === "install") {
-                const prepared = await updates.get(configs, { onWait: () => console.log("版本数据仍在准备，请稍候…") });
-                for (const message of prepared.messages) console.log(message);
-                if (prepared.error) { console.log(prepared.error); continue; }
-                ({ latest, installed, trees } = prepared);
-            }
-            const choices = pluginChoices(statuses(configs, latest, installed, trees, { hostVersion: version }), action);
-            if (!choices.length) { console.log("没有可卸载的插件。"); continue; }
-            const selected = await submenu(checkbox, { message: action === "remove" ? "选择要卸载的插件（不删除凭据和数据）" : "选择要安装、更新或修复的插件",
-                choices,
-                instructions: "空格选择，回车确认；Esc 返回", pageSize: 10 }, []);
-            if (!selected.length) continue;
-            if (action === "remove" && !await submenu(confirm, { message: `将卸载 ${selected.map(p => p.id).join("、")}，仅移除配置。确认？`, default: false }, false)) continue;
+            const prepared = await updates.get(configs, { onWait: () => console.log("版本数据仍在准备，请稍候…") });
+            for (const message of prepared.messages) console.log(message);
+            if (prepared.error) console.log(`${prepared.error} 仍可取消勾选以卸载已配置的插件。`);
+            const { latest, installed = "", trees = new Map() } = prepared;
+            const rows = createSelection(statuses(configs, latest, installed, trees, { hostVersion: version }), latest);
+            const operations = await managePlugins({ rows, pageSize: 10 });
+            if (!operations) continue;
+            if (!await reviewOperations(operations, { confirm: options => submenu(confirm, options, false) })) continue;
             let backup;
             try {
-                backup = await applySelection(configs, selected, action, latest,
+                backup = await applyOperations(configs, operations, latest,
                     join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "opencode-plugins", "backups"),
                     { report: message => console.log(message) });
             } catch (error) { console.log(error.message); updates.refresh(); continue; }
-            for (const p of selected) console.log(`✓ ${p.id}：${action === "remove" ? "已移除配置" : "已配置所选版本"}`);
+            for (const { plugin, action } of operations) console.log(`✓ ${plugin.id}：${actionLabels[action]}完成`);
             if (backup) console.log(`原配置备份：${backup}（保留最近 ${BACKUP_LIMIT} 次）`);
             try { await opencode("reload"); console.log("OpenCode 配置已重新加载。"); }
             catch { console.log("配置已保存，但重新加载失败。请运行 opencode reload 或重新启动 OpenCode。"); }
-            console.log(action === "remove" ? "请重新打开 OpenCode 终端界面；卸载保留缓存、账号及插件数据。\n"
-                : "插件包已准备好，请重新打开 OpenCode 终端界面加载。\n");
+            console.log("请重新打开 OpenCode 终端界面加载变更。\n");
             updates.refresh();
         }
     } finally { await updates.close(); }

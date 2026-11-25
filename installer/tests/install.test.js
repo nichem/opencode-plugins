@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, access, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, access, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { catalog, specifier } from "../catalog.js";
-import { readConfigs } from "../config.js";
-import { preparePackages, applySelection } from "../install.js";
+import { parse } from "jsonc-parser";
+import { readConfigs, planOperations } from "../config.js";
+import { preparePackages, applySelection, applyOperations } from "../install.js";
 import { opencode } from "../status.js";
 
 const revision = "a".repeat(40);
@@ -97,4 +98,71 @@ test("invalid references and shell characters cannot reach OpenCode", async () =
     await assert.rejects(preparePackages([{ id: "foreign" }], revision), /无效/);
     for (const target of [specifier(selected[0].id, "main"), specifier(selected[0].id, revision) + " & echo unsafe", "foreign"])
         await assert.rejects(opencode("add", { target }), /无效/);
+});
+
+async function mixedFixture(t) {
+    const root = await fixture(t), backups = join(root, "backups");
+    const old = "b".repeat(40), item = id => catalog.find(plugin => plugin.id === id);
+    const operations = [["opencode-providers", "update"], ["opencode-message-delete", "install"], ["opencode-quota", "repair"],
+        ["opencode-deepseek-skills", "migrate"], ["opencode-ui", "remove"]].map(([id, action]) => ({ plugin: item(id), action }));
+    const paths = { server: [join(root, "opencode.jsonc")], tui: [join(root, "cli.json")] };
+    const server = `{// keep fixture comment\n"keep":true,"plugins":["foreign",${JSON.stringify({ package: specifier("opencode-providers", old), options: { fixture: true } })},"${specifier("opencode-websearch", old)}","${specifier("opencode-quota", old)}"],"websearch":{"provider":"dss"}}`;
+    const tui = JSON.stringify({ plugins: ["foreign-ui", specifier("opencode-websearch", old), specifier("opencode-ui", old)], theme: "fixture" });
+    await writeFile(paths.server[0], server);
+    await writeFile(paths.tui[0], tui);
+    return { root, backups, paths, server, tui, operations, configs: await readConfigs(paths) };
+}
+
+test("mixed install/update/repair/migrate/remove waits for packages and writes one complete backup", async t => {
+    const f = await mixedFixture(t), gate = Promise.withResolvers();
+    const task = applyOperations(f.configs, f.operations, revision, f.backups, { prepare: async (plugins, ref) => {
+        assert.equal(ref, revision);
+        assert.deepEqual(plugins.map(plugin => plugin.id), f.operations.slice(0, 4).map(operation => operation.plugin.id));
+        await gate.promise;
+    } });
+    assert.equal(await readFile(f.paths.server[0], "utf8"), f.server);
+    assert.equal(await readFile(f.paths.tui[0], "utf8"), f.tui);
+    await assert.rejects(access(f.backups), { code: "ENOENT" });
+    gate.resolve();
+    const backup = await task;
+    assert.equal((await readdir(f.backups)).length, 1);
+    assert.equal(JSON.parse(await readFile(join(backup, "manifest.json"), "utf8")).length, 2);
+    assert.equal(await readFile(join(backup, "0.json.bak"), "utf8"), f.server);
+    assert.equal(await readFile(join(backup, "1.json.bak"), "utf8"), f.tui);
+    const server = await readFile(f.paths.server[0], "utf8");
+    assert.match(server, /keep fixture comment/);
+    assert.deepEqual(parse(server), { keep: true, plugins: ["foreign",
+        { package: specifier("opencode-providers", revision), options: { fixture: true } },
+        specifier("opencode-deepseek-skills", revision), specifier("opencode-quota", revision)], websearch: { provider: "random" } });
+    assert.deepEqual(parse(await readFile(f.paths.tui[0], "utf8")), { theme: "fixture", plugins: ["foreign-ui",
+        specifier("opencode-deepseek-skills", revision), specifier("opencode-message-delete", revision), specifier("opencode-quota", revision)] });
+});
+
+test("failed mixed preparation leaves removals and migrations unapplied with no backup", async t => {
+    const f = await mixedFixture(t);
+    await assert.rejects(applyOperations(f.configs, f.operations, revision, f.backups, {
+        prepare: () => { throw new Error("fixture download failed"); },
+    }), /download failed/);
+    assert.equal(await readFile(f.paths.server[0], "utf8"), f.server);
+    assert.equal(await readFile(f.paths.tui[0], "utf8"), f.tui);
+    await assert.rejects(access(f.backups), { code: "ENOENT" });
+});
+
+test("concurrent edits reject a mixed transaction and roll back its earlier file", async t => {
+    const f = await mixedFixture(t), concurrent = '{"theme":"external edit"}';
+    await assert.rejects(applyOperations(f.configs, f.operations, revision, f.backups, {
+        prepare: () => writeFile(f.paths.tui[0], concurrent),
+    }), /其他程序修改/);
+    assert.equal(await readFile(f.paths.server[0], "utf8"), f.server);
+    assert.equal(await readFile(f.paths.tui[0], "utf8"), concurrent);
+});
+
+test("empty operations never prepare or write, and conflicting operations are rejected", async () => {
+    await applyOperations([], [], undefined, "/unused", {
+        prepare: () => assert.fail("no packages needed"), write: () => assert.fail("no writes needed"),
+    });
+    assert.throws(() => planOperations([], [{ plugin: selected[0], action: "install" }, { plugin: selected[0], action: "remove" }], revision), /冲突/);
+    assert.throws(() => planOperations([], [{ plugin: selected[0], action: "invalid" }], revision), /无效/);
+    const old = catalog.find(plugin => plugin.id === "opencode-websearch"), replacement = catalog.find(plugin => plugin.id === "opencode-deepseek-skills");
+    assert.throws(() => planOperations([], [{ plugin: old, action: "remove" }, { plugin: replacement, action: "migrate" }], revision), /冲突/);
 });

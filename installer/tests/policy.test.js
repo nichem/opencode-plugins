@@ -6,7 +6,8 @@ import { join, resolve, sep } from "node:path";
 import { parse } from "jsonc-parser";
 import { catalog, identify, pluginPath, repo, specifier } from "../catalog.js";
 import { planChanges, readConfigs, writeChanges } from "../config.js";
-import { nativeReplacement, pluginChoices } from "../policy.js";
+import { nativeReplacement } from "../policy.js";
+import { createSelection, toggleChecked, toggleUpdate, selectedOperations } from "../selection.js";
 import { loadVersionTrees, statuses } from "../status.js";
 
 const goal = catalog.find(plugin => plugin.id === "opencode-goal");
@@ -28,13 +29,14 @@ test("native Goal retirement uses numeric release versions, including the stable
 
 test("a fresh 2.2.1 install shows native Goal as disabled and never offers it for uninstall", () => {
     const items = statuses([], latest, "", new Map(), { hostVersion: "opencode v2.2.1" });
-    const choices = pluginChoices(items, "install"), choice = choices.find(item => item.value.id === goal.id);
-    assert.equal(choice.value.state, "absent");
-    assert.match(choice.name, /已原生内置/);
-    assert.match(choice.disabled, /原生 \/goal/);
+    const choices = createSelection(items, latest), choice = choices.find(item => item.plugin.id === goal.id);
+    assert.equal(choice.plugin.state, "absent");
+    assert.match(choice.plugin.label, /已原生内置/);
+    assert.match(choice.blocked, /原生 \/goal/);
+    assert.equal(toggleChecked(choice), choice);
     assert.ok(choices.every(item => !item.checked));
-    assert.deepEqual(pluginChoices(items, "remove"), []);
-    for (const item of choices.filter(item => item.value.id !== goal.id && !item.value.minimumVersion)) assert.equal(item.disabled, false);
+    assert.deepEqual(selectedOperations(choices), []);
+    for (const item of choices.filter(item => item.plugin.id !== goal.id && !item.plugin.minimumVersion)) assert.equal(item.blocked, undefined);
 });
 
 test("installed and partially configured retired Goal remains removable even without a known remote version", () => {
@@ -48,12 +50,13 @@ test("installed and partially configured retired Goal remains removable even wit
         const installed = items.find(plugin => plugin.id === goal.id);
         assert.equal(installed.state, "retired");
         assert.match(installed.label, /卸载旧插件/);
-        const remove = pluginChoices(items, "remove");
+        const remove = createSelection(items).filter(row => row.installed);
         assert.equal(remove.length, 1);
-        assert.equal(remove[0].value.id, goal.id);
-        assert.equal(remove[0].disabled, false);
-        assert.match(remove[0].name, /可卸载旧插件/);
-        assert.ok(pluginChoices(items, "install").find(item => item.value.id === goal.id).disabled);
+        assert.equal(remove[0].plugin.id, goal.id);
+        assert.equal(toggleChecked(remove[0]).checked, false);
+        assert.equal(toggleChecked(toggleChecked(remove[0])).checked, true);
+        assert.equal(toggleUpdate(remove[0]), remove[0]);
+        assert.match(remove[0].plugin.label, /卸载旧插件/);
         assert.deepEqual(configs, before, "detecting retirement does not automatically edit configuration");
     }
 });
@@ -62,10 +65,10 @@ test("old OpenCode versions still offer Goal installation, updates and repair of
     const trees = new Map([[old, new Map([[pluginPath(goal.id), "old"]])], [latest, new Map([[pluginPath(goal.id), "new"]])]]);
     for (const hostVersion of ["2.0.27", "opencode v2.2.0", "2.2.1-rc.1"]) {
         const items = statuses([], latest, "", new Map(), { hostVersion });
-        const choice = pluginChoices(items, "install").find(item => item.value.id === goal.id);
-        assert.equal(choice.disabled, false);
+        const choice = createSelection(items, latest).find(item => item.plugin.id === goal.id);
+        assert.equal(choice.blocked, undefined);
         const empty = [configured("server", []), configured("tui", [])];
-        const installed = planChanges(empty, [choice.value], "install", latest);
+        const installed = planChanges(empty, [choice.plugin], "install", latest);
         assert.deepEqual(installed.map(config => config.kind), ["server", "tui"]);
         for (const change of installed) assert.equal(identify(parse(change.next).plugins[0]).id, goal.id);
         const configs = [configured("server", [specifier(goal.id, old)]), configured("tui", [specifier(goal.id, old)])];
@@ -113,10 +116,10 @@ test("retired Goal uninstall removes all old/new entries with backups, retaining
         await writeFile(tui, JSON.stringify({ plugins: [legacy, specifier(goal.id, latest), { package: "foreign-ui", options: { keep: true } }], theme: "fixture" }));
         await writeFile(state, '{"objective":"Artificial unfinished goal","status":"paused"}');
         const paths = { server: [server], tui: [tui] }, configs = await readConfigs(paths);
-        const choices = pluginChoices(statuses(configs, undefined, "", new Map(), { hostVersion: "2.2.1" }), "remove");
+        const choices = createSelection(statuses(configs, undefined, "", new Map(), { hostVersion: "2.2.1" })).filter(row => row.installed);
         assert.equal(choices.length, 1);
-        assert.equal(choices[0].disabled, false);
-        const changes = planChanges(configs, [choices[0].value], "remove");
+        assert.equal(toggleChecked(choices[0]).checked, false);
+        const changes = planChanges(configs, [choices[0].plugin], "remove");
         assert.equal(changes.length, 2);
         const backup = await writeChanges(changes, join(root, "backups"));
         assert.equal(await readFile(join(backup, "0.json.bak"), "utf8"), serverText);

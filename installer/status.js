@@ -238,7 +238,7 @@ export function statuses(configs, latest, installed = "", trees = new Map(), { h
         });
         if (comparison.includes(undefined)) return { ...plugin, state: "unknown", label: "版本检查失败 · 请重试" };
         const current = comparison.every(Boolean);
-        if (migration) return { ...plugin, state: current ? "repair" : "update", label: current ? "旧目录地址 · 需要迁移" : "有更新 · 需要迁移" };
+        if (migration) return { ...plugin, pathMigration: true, state: current ? "repair" : "update", label: current ? "旧目录地址 · 需要迁移" : "有更新 · 需要迁移" };
         if (duplicate) return { ...plugin, state: "repair", label: "重复配置 · 可修复" };
         return { ...plugin, state: current ? "current" : "update", label: current ? "已安装 · 最新" : "已安装 · 有更新" };
     });

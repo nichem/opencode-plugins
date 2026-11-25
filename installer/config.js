@@ -73,9 +73,21 @@ function removeArrayEntry(text, index) {
 }
 
 export function planChanges(configs, selected, action, revision) {
-    const retiringSearch = selected.some(plugin => [plugin.id, ...(plugin.replaces ?? [])].includes("opencode-websearch"))
-        && configs.some(c => (c.data.plugins ?? []).some(e => identify(e)?.id === "opencode-websearch"))
-        && (action === "remove" || selected.some(plugin => plugin.replaces?.includes("opencode-websearch")));
+    return planOperations(configs, selected.map(plugin => ({ plugin, action })), revision);
+}
+
+export function planOperations(configs, operations, revision) {
+    const seen = new Set();
+    for (const { plugin, action } of operations) {
+        if (!["install", "update", "repair", "migrate", "remove"].includes(action)) throw new Error("无效的插件操作（未修改配置）");
+        for (const id of [plugin.id, ...(plugin.replaces ?? [])]) {
+            if (seen.has(id)) throw new Error("插件操作重复或冲突（未修改配置）");
+            seen.add(id);
+        }
+    }
+    const retiringSearch = operations.some(({ plugin, action }) => plugin.replaces?.includes("opencode-websearch")
+        || (action === "remove" && plugin.id === "opencode-websearch"))
+        && configs.some(c => (c.data.plugins ?? []).some(e => identify(e)?.id === "opencode-websearch"));
     return configs.map(config => {
         let entries = [...(config.data.plugins ?? [])];
         let next = config.original ?? "{}\n";
@@ -89,7 +101,7 @@ export function planChanges(configs, selected, action, revision) {
                 for (const key of Object.keys(after)) update([...path, key], before[key], after[key]);
             } else edit(path, after);
         };
-        for (const plugin of selected) {
+        for (const { plugin, action } of operations) {
             const family = [plugin.id, ...(plugin.replaces ?? [])];
             const positions = entries.flatMap((entry, index) => family.includes(identify(entry)?.id) ? [index] : []);
             const matches = positions.map(index => entries[index]);

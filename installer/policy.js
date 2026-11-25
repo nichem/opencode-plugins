@@ -27,14 +27,3 @@ export function supportedVersion(plugin, hostVersion) {
     }
     return !current.prerelease;
 }
-
-export function pluginChoices(items, action) {
-    return items.filter(plugin => !plugin.replacedBy && (action !== "remove" || plugin.state !== "absent")).map(plugin => ({
-        name: `${plugin.id} — ${plugin.title} [${action === "remove"
-            ? plugin.migrating ? "websearch → deepseek-skills · 移除新旧入口" : plugin.replacement ? "已原生内置 · 可卸载旧插件" : "已配置" : plugin.label}]`,
-        value: plugin,
-        disabled: action !== "install" ? false : plugin.unsupported ? `需要 OpenCode ${plugin.minimumVersion}+`
-            : plugin.replacement ? `请使用 OpenCode 原生 ${plugin.nativeCommand}`
-            : plugin.state === "current" ? "已是最新" : plugin.state === "unknown" ? "请返回重试" : false,
-    }));
-}
